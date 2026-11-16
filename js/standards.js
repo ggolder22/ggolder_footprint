@@ -1,6 +1,6 @@
 // Contenido normativo: GHG Protocol (Corporate Standard, Scope 2 Guidance, Scope 3 Standard)
 // e ISO 14064-1:2018. El mapeo Alcance 3 -> categorías ISO es orientativo.
-window.STD = (function () {
+(function (root) { root.STD = (function () {
   const ISO_CATEGORIES = {
     1: 'Cat. 1 · Emisiones y remociones directas',
     2: 'Cat. 2 · Indirectas por energía importada',
@@ -146,7 +146,7 @@ window.STD = (function () {
     Weight: [{ key: 'weight', label: 'Peso', units: WEIGHT }],
     Volume: [{ key: 'volume', label: 'Volumen', units: ['l', 'm3', 'ml', 'gallon_us', 'bbl', 'cubic_foot'] }],
     Distance: [{ key: 'distance', label: 'Distancia', units: DIST }],
-    Money: [{ key: 'money', label: 'Gasto', units: ['usd', 'eur', 'gbp', 'clp', 'mxn', 'cop', 'pen', 'ars', 'brl'] }],
+    Money: [{ key: 'money', label: 'Gasto', units: ['usd', 'eur', 'ars', 'brl', 'gbp'] }],
     Number: [{ key: 'number', label: 'Cantidad', units: null }],
     Area: [{ key: 'area', label: 'Superficie', units: ['m2', 'ha', 'km2', 'ft2'] }],
     Time: [{ key: 'time', label: 'Tiempo', units: TIME }],
@@ -189,8 +189,74 @@ window.STD = (function () {
     spend: 'Basado en gasto',
   };
 
+  // ---------------- Tipos de huella ----------------
+  const FOOTPRINT_TYPES = {
+    organizacion: {
+      name: 'Huella organizacional', short: 'Organización',
+      norms: 'GHG Protocol Corporate Standard · ISO 14064-1:2018',
+      desc: 'Inventario anual de la organización por Alcances 1, 2 y 3 (categorías 1 a 6 de ISO), con límites organizacionales y operacionales.',
+      groupName: 'Instalación', groupPlural: 'Instalaciones',
+    },
+    evento: {
+      name: 'Huella de evento', short: 'Evento',
+      norms: 'GHG Protocol (cuantificación) · ISO 20121:2024 (gestión sostenible)',
+      desc: 'Emisiones de un evento entre el montaje y el desmontaje, por componente, con indicador por asistente y escenarios de reducción.',
+      groupName: 'Componente', groupPlural: 'Componentes',
+      defaultGroups: ['Montaje y operación', 'Visitantes', 'Catering', 'Residuos', 'Desmontaje'],
+    },
+    producto: {
+      name: 'Huella de producto', short: 'Producto',
+      norms: 'ISO 14067:2018 · GHG Protocol Product Life Cycle Standard · ISO 14040/14044',
+      desc: 'Huella de carbono de un producto por unidad declarada o funcional, por etapa del ciclo de vida, con asignación y análisis de sensibilidad.',
+      groupName: 'Etapa', groupPlural: 'Etapas del ciclo de vida',
+      defaultGroups: ['Actividades previas (materias primas y transporte)', 'Etapa 1', 'Etapa 2', 'Etapa 3'],
+    },
+  };
+
+  const PRODUCT_BOUNDARIES = {
+    'cuna-puerta': 'De la cuna a la puerta (hasta que el producto sale de la planta)',
+    'cuna-tumba': 'De la cuna a la tumba (incluye distribución, uso y fin de vida)',
+    'puerta-puerta': 'De puerta a puerta (solo procesos propios)',
+  };
+
+  const PRODUCT_PRINCIPLES = [
+    { id: 'lifecycle', name: 'Perspectiva de ciclo de vida', help: 'Se consideran las etapas relevantes dentro del límite del sistema declarado.' },
+    { id: 'relevance', name: 'Pertinencia', help: 'Datos y métodos adecuados a la unidad declarada y al objetivo del estudio.' },
+    { id: 'completeness', name: 'Integridad', help: 'Se incluyen todas las emisiones significativas dentro del límite del sistema.' },
+    { id: 'consistency', name: 'Coherencia', help: 'Supuestos, métodos y datos se aplican del mismo modo en todo el estudio.' },
+    { id: 'nodouble', name: 'Evitar el doble conteo', help: 'Ningún flujo se contabiliza dos veces (p. ej. recortes ya incluidos en la materia prima).' },
+    { id: 'accuracy', name: 'Exactitud', help: 'Se reducen sesgos e incertidumbres tanto como sea práctico.' },
+    { id: 'transparency', name: 'Transparencia', help: 'Reglas de asignación, supuestos y fuentes documentados.' },
+  ];
+
+  const ISO20121_DEFAULT = [
+    { aspect: 'Accesibilidad', question: '¿Se garantiza el acceso a personas con discapacidad?', evidence: 'Plano y verificación de acceso', responsible: 'Organizador' },
+    { aspect: 'Compras responsables', question: '¿Qué criterios se aplican a los proveedores?', evidence: 'Condiciones de contratación', responsible: 'Compras' },
+    { aspect: 'Transporte', question: '¿Hubo incentivos al transporte compartido o público?', evidence: 'Comunicaciones y encuesta', responsible: 'Logística' },
+    { aspect: 'Alimentación', question: '¿Se consideraron los menús y el desperdicio?', evidence: 'Pedidos y registro de sobrantes', responsible: 'Catering' },
+    { aspect: 'Residuos', question: '¿Existe separación y destinos acreditados?', evidence: 'Actas de retiro y pesajes', responsible: 'Ambiente' },
+    { aspect: 'Energía', question: '¿Se gestionó el consumo eléctrico y su origen?', evidence: 'Registros de medidores', responsible: 'Montaje' },
+    { aspect: 'Partes interesadas', question: '¿Se escuchó a asistentes y comunidad?', evidence: 'Encuesta y observaciones', responsible: 'Organizador' },
+  ];
+
+  const PROVINCES = ['Buenos Aires', 'Ciudad Autónoma de Buenos Aires', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán'];
+
+  // Validación de CUIT (dígito verificador módulo 11)
+  function validCuit(cuit) {
+    const d = String(cuit || '').replace(/\D/g, '');
+    if (d.length !== 11) return false;
+    const w = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    const sum = w.reduce((a, x, i) => a + x * Number(d[i]), 0);
+    let v = 11 - (sum % 11);
+    if (v === 11) v = 0;
+    if (v === 10) v = 9;
+    return v === Number(d[10]);
+  }
+  const formatCuit = (c) => { const d = String(c || '').replace(/\D/g, ''); return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : c; };
+
   return {
     ISO_CATEGORIES, CATEGORIES, byId, RELEVANCE_CRITERIA, CONSOLIDATION, PRINCIPLES, GASES,
     UNIT_TYPES, ACTIVITY_UNCERTAINTY, FACTOR_UNCERTAINTY_DEFAULT, DATA_METHODS,
+    FOOTPRINT_TYPES, PRODUCT_BOUNDARIES, PRODUCT_PRINCIPLES, ISO20121_DEFAULT, PROVINCES, validCuit, formatCuit,
   };
-})();
+})(); })(typeof window !== "undefined" ? window : globalThis);

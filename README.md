@@ -1,82 +1,82 @@
-# Calculadora de Huella de Carbono (GHG Protocol + ISO 14064-1)
+# Huella de Carbono: organización, evento y producto
 
-Herramienta web para elaborar inventarios corporativos de gases de efecto invernadero (GEI) paso a paso, con factores de emisión de la API de [Climatiq](https://www.climatiq.io/docs).
+Aplicación web para consultoras y profesionales que calculan huellas de carbono para clientes en Argentina. Cada usuario tiene su cuenta, sus clientes, una **biblioteca de factores de emisión por cliente** y su propia API key de [Climatiq](https://www.climatiq.io/docs). Todo cambio queda registrado para la trazabilidad.
+
+## Tipos de huella
+
+| Tipo | Normas | Resultado | Pasos propios |
+|---|---|---|---|
+| **Organizacional** | GHG Protocol Corporate Standard · ISO 14064-1:2018 | tCO₂e/año por Alcance 1, 2 y 3 y por categoría ISO 1 a 6 | Consolidación, instalaciones, límites de informe con criterios de relevancia, año base, Alcance 2 dual (ubicación y mercado) |
+| **De evento** | GHG Protocol + ISO 20121:2024 | kgCO₂e del evento y kgCO₂e/asistente, por componente | Límites temporal y espacial, componentes, escenarios de reducción, matriz de gestión ISO 20121 |
+| **De producto** | ISO 14067:2018 · GHG Product Standard · ISO 14040/44 | kgCO₂e por unidad declarada, por etapa | Unidad declarada, lote, límite del sistema, criterio de asignación, sensibilidad |
+
+Las tres huellas **nunca se suman entre sí**: tienen objetos de estudio y límites distintos.
 
 ## Qué hace
 
-Guía el proceso completo que piden el **GHG Protocol Corporate Standard** (más las guías de Alcance 2 y Alcance 3) y la **ISO 14064-1:2018**:
+- **Factores por fuente:** en cada fuente elegís entre la *biblioteca del cliente* (factores propios) o un factor *oficial de Climatiq*. La biblioteca se puede pegar directamente desde Excel, con las columnas Código · Actividad · Factor · Unidad · Origen.
+- **Control de unidades:** convierte dentro de la misma magnitud (L↔m³, kg↔t, kWh↔GJ) y marca como inválidas las combinaciones incoherentes, como vehículo·km contra pasajero·km o t·km contra km.
+- **Validación:** datos faltantes o negativos, factores sin fuente, fuentes sin evidencia o sin responsable, posibles dobles conteos y factores que cambiaron después del cálculo.
+- **Completitud:** muestra un indicador de completitud y marca el total como **PARCIAL** mientras falten fuentes. El Word sale como **BORRADOR** hasta llegar al 100% sin errores. Recién entonces se puede **emitir**, lo que guarda una versión inmutable.
+- **Trazabilidad:** la base de datos registra las altas, los cambios y las bajas de clientes y factores (con los valores anteriores y los nuevos), la creación y el estado de cada huella, los cálculos, las descargas y las emisiones.
+- **Informe Word (.docx)** con el contenido que exige cada norma. También exporta a CSV.
 
-| Paso | Contenido | Referencia |
-|---|---|---|
-| 1. Organización y objetivo | Organización que informa, responsable, propósito, usuarios previstos y verificación | ISO 14064-1 §9 · GHG cap. 2 |
-| 2. Límites organizacionales | Enfoque de consolidación (control operacional, control financiero o participación accionaria) e instalaciones | ISO 14064-1 §5.1 · GHG cap. 3 |
-| 3. Límites de informe | Alcance 1, 2 y 3 (15 categorías) con su equivalencia en las categorías 1 a 6 de ISO, criterios de relevancia y exclusiones justificadas | ISO 14064-1 §5.2 · GHG cap. 4 · Scope 3 Std. |
-| 4. Período y año base | Período, año base, política de recálculo y umbral de significancia | ISO 14064-1 §6.4 · GHG cap. 5 |
-| 5. Fuentes y datos de actividad | Fuentes por instalación, búsqueda de factores en Climatiq, factores propios y calidad del dato | ISO 14064-1 §6.2 · GHG cap. 6 |
-| 6. Cálculo y resultados | Cálculo por lotes; Alcance 2 dual (ubicación y mercado); resultados por alcance, categoría ISO, instalación y gas | Scope 2 Guidance |
-| 7. Calidad e incertidumbre | Principios, lista de verificación e incertidumbre combinada (IPCC 2006, enfoque 1) | ISO 14064-1 §8 · GHG cap. 7 |
-| 8. Informe | Informe en **Word (.docx)** editable, imprimible o en PDF, con el contenido de ISO 14064-1 §9.3, más exportación a CSV | ISO 14064-1 §9 · GHG cap. 9 |
-
-Dentro de la app, el menú **Instrucciones** explica el uso paso a paso, qué datos pedir al cliente, cómo elegir factores y cómo resolver los problemas frecuentes.
-
-Los datos se guardan automáticamente en el navegador (localStorage). Botones de la barra superior:
-- **Descargar Word**: genera el informe final en `.docx` (con la librería [docx](https://www.npmjs.com/package/docx), que se carga desde un CDN solo al usarla).
-- **Guardar proyecto**: descarga un respaldo `.json` editable.
-- **Abrir proyecto**: carga un `.json` para retomarlo en este u otro equipo.
-
-## Estructura
+## Arquitectura
 
 ```
-index.html          Página principal
-styles.css          Estilos (modo claro y oscuro, imprimible)
-js/standards.js     Contenido normativo: categorías, mapeo ISO, criterios y unidades
-js/climatiq.js      Cliente de la API (siempre pasa por el proxy)
-js/app.js           Asistente, cálculo, resultados e informe
-api/climatiq.js     Función serverless de Vercel que guarda la API key en secreto
+index.html, styles.css    Interfaz (sin build)
+js/standards.js           Contenido normativo, tipos de huella y validación de CUIT
+js/units.js               Catálogo de unidades, conversión y control de coherencia
+js/calc.js                Motor de cálculo, validación, completitud, escenarios y sensibilidad
+js/report.js              Modelo de informe por tipo → HTML y Word
+js/db.js                  Acceso a Supabase (auth y tablas)
+js/climatiq.js            Cliente de la API (pasa siempre por el proxy)
+js/app.js                 Interfaz: cuentas, clientes, biblioteca y asistentes
+api/climatiq.js           Proxy de Vercel: verifica la sesión y usa la API key del usuario
+api/config.js             Entrega al navegador la URL y la anon key de Supabase
+supabase/schema.sql       Tablas, seguridad por fila (RLS), auditoría y funciones
 ```
 
-No requiere build ni dependencias.
+## Puesta en marcha
 
-## Endpoints de Climatiq usados
+### 1. Supabase
+1. Creá un proyecto en [supabase.com](https://supabase.com). El plan gratuito alcanza para empezar.
+2. En **SQL Editor → New query**, pegá todo el contenido de `supabase/schema.sql` y ejecutalo con **Run**. Se puede volver a ejecutar sin perder datos.
+3. En **Authentication → URL Configuration**, cargá en **Site URL** la dirección de tu sitio en Vercel (p. ej. `https://ggolder-footprint.vercel.app`) y agregala también en **Redirect URLs**. Esto hace que funcionen los emails de confirmación y de recuperación de contraseña.
+4. Opcional: en **Authentication → Providers → Email** podés desactivar *Confirm email* para pruebas internas.
+5. En **Project Settings → Data API**, copiá la *Project URL*. En **Project Settings → API Keys**, copiá la *Publishable key* (`sb_publishable_…`) y la *Secret key* (`sb_secret_…`).
 
-- `GET /data/v1/search`: busca factores de emisión.
-- `POST /data/v1/estimate/batch`: calcula hasta 100 fuentes por llamada con el selector `id`.
-- `POST /energy/v1.5/electricity/batch`: calcula la electricidad con los métodos de ubicación y de mercado, más las emisiones aguas arriba (WTT y pérdidas de T&D), que se asignan a la categoría 3.3.
+### 2. Vercel
+En **Settings → Environment Variables**, cargá:
 
-## Despliegue en Vercel
+| Variable | Valor |
+|---|---|
+| `SUPABASE_URL` | Project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | Publishable key (`sb_publishable_…`) |
+| `SUPABASE_SECRET_KEY` | Secret key (`sb_secret_…`, **secreta**: solo va en Vercel, nunca en el código) |
 
-1. Crea una cuenta en [climatiq.io](https://www.climatiq.io) y genera una API key.
-2. Sube este proyecto a GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Calculadora de huella de carbono"
-   git branch -M main
-   git remote add origin https://github.com/TU_USUARIO/huella-de-carbono.git
-   git push -u origin main
-   ```
-3. En [vercel.com](https://vercel.com), elige **Add New → Project**, importa el repositorio y deja el framework en **Other**. No hay build.
-4. En **Settings → Environment Variables**, agrega:
-   - `CLIMATIQ_API_KEY` = tu key (obligatoria).
-   - `APP_ACCESS_CODE` = una clave cualquiera (opcional, pero recomendada). Así, solo quien tenga el código puede usar tu cuota de Climatiq. Los usuarios lo ingresan en **Ajustes**.
-5. Vuelve a desplegar (**Redeploy**) para que tome las variables.
+Si tu proyecto todavía usa las claves anteriores (anon y service_role), también funcionan con los nombres `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
 
-## Desarrollo local
+Después hacé **Redeploy**. Las variables `CLIMATIQ_API_KEY` y `APP_ACCESS_CODE` de la versión anterior ya no se usan y podés borrarlas.
 
+### 3. Uso
+1. Registrate en el sitio.
+2. En **Mi cuenta**, cargá tu API key de Climatiq. El navegador no puede volver a leerla; solo la usa el servidor.
+3. Creá un cliente, cargá su biblioteca de factores y creá la primera huella.
+
+### Desarrollo local
 ```bash
-npm i -g vercel
-vercel dev          # sirve la página y la función /api/climatiq en http://localhost:3000
+vercel dev    # crea un archivo .env con las 3 variables de arriba
 ```
 
-Crea un archivo `.env` con `CLIMATIQ_API_KEY=...`, o ingresa la key en **Ajustes** solo para pruebas. Si abres `index.html` directamente (`file://`), la interfaz y los factores propios funcionan, pero la API de Climatiq no.
+## Seguridad
+- Cada tabla tiene **RLS**: un usuario solo ve y modifica sus propios datos.
+- La API key de Climatiq vive en una tabla sin políticas de lectura. Solo se escribe con funciones de la base de datos y solo la lee el proxy con la Secret key.
+- Las versiones emitidas y el registro de auditoría no tienen políticas de modificación ni de borrado.
 
 ## Notas metodológicas
-
-- **PCG (GWP):** por defecto IPCC AR6, a 100 años. Se puede cambiar en Ajustes.
-- **Versión de datos:** por defecto `^39`. Revisa la versión vigente en la [documentación de Climatiq](https://www.climatiq.io/docs/api-reference/data-versioning) y fíjala para que los resultados se puedan reproducir.
-- **Alcance 2:** se reportan siempre ambos métodos. En el paso 3 eliges cuál suma al total.
-- **Remociones y CO₂ biogénico:** se reportan por separado y no se restan del total, como exige ISO 14064-1.
-- **Mapeo de Alcance 3 a ISO:** es orientativo. Las categorías 3.14 y 3.15 se asignan a la categoría 6 de ISO.
-- **Incertidumbre:** los valores por defecto son orientativos (medido ±2%, calculado ±5%, estimado ±20%, basado en gasto ±30%, factor ±10%). Ajústalos con información de cada fuente.
-- **Desglose por gas:** Climatiq lo entrega en masa (kg de cada gas) solo cuando el factor de origen lo publica.
-- La herramienta **no sustituye la verificación** de un tercero independiente según ISO 14064-3.
+- **PCG:** IPCC AR6 a 100 años por defecto (configurable en Mi cuenta).
+- **Versión de datos de Climatiq:** `^39` por defecto. Mantenela fija durante todo un inventario para que sea reproducible.
+- **Electricidad en Argentina:** si Climatiq no tiene factor de red para `AR`, cargá en la biblioteca el factor publicado por la Secretaría de Energía.
+- **Incertidumbre:** se combina por propagación de errores (IPCC 2006, enfoque 1). Los valores por defecto son orientativos.
+- La herramienta **no reemplaza la verificación** de un tercero independiente (ISO 14064-3).
