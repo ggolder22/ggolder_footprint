@@ -150,8 +150,10 @@
     { id: 'calidad', title: 'Calidad e incertidumbre', render: renderCalidad, done: () => S.PRINCIPLES.every((p) => project.purpose.principles[p.id]) },
     { id: 'informe', title: 'Informe', render: renderInforme, done: () => false },
   ];
+  const HELP = { id: 'ayuda', title: 'Instrucciones de uso', render: () => renderAyuda() };
   const currentStep = () => {
     const id = (location.hash || '').replace(/^#\/?/, '');
+    if (id === 'ayuda') return HELP;
     return STEPS.find((s) => s.id === id) || STEPS[0];
   };
 
@@ -163,6 +165,7 @@
       <button class="step-link${s === cur ? ' active' : ''}${i > 0 && s.done() ? ' done' : ''}" data-action="go" data-step="${s.id}">
         <span class="step-num">${i > 0 && s.done() ? '✓' : i}</span><span>${esc(s.title)}</span>
       </button>`).join('') +
+      `<button class="step-link${cur === HELP ? ' active' : ''}" data-action="go" data-step="ayuda" style="margin-top:10px"><span class="step-num">?</span><span>Instrucciones de uso</span></button>` +
       `<div class="steps-foot">${project.org.name ? `<strong>${esc(project.org.name)}</strong><br>` : ''}Período ${esc(project.period.year)} · ${project.sources.length} fuentes</div>`;
   }
 
@@ -182,7 +185,7 @@
   function render() {
     const main = document.getElementById('main');
     const step = currentStep();
-    main.innerHTML = step.render() + (step.id !== 'inicio' ? navButtons() : '');
+    main.innerHTML = step.render() + (step.id !== 'inicio' && step !== HELP ? navButtons() : '');
     renderNav();
     renderModal();
   }
@@ -202,6 +205,7 @@
           </div>
           <div class="row" style="margin-top:16px">
             <button class="btn" data-action="go" data-step="organizacion">${has ? 'Continuar inventario' : 'Comenzar inventario'} →</button>
+            <button class="btn ghost" data-action="go" data-step="ayuda">Ver instrucciones</button>
             <button class="btn ghost" data-action="load-example">Cargar ejemplo</button>
             ${has ? '<button class="btn danger" data-action="reset">Nuevo inventario en blanco</button>' : ''}
           </div>
@@ -867,108 +871,364 @@
   }
 
   // ------------------------------------------------------------
-  // 8. Informe
+  // 8. Informe — un único modelo alimenta la vista HTML y el Word
   // ------------------------------------------------------------
-  function renderInforme() {
+  function reportModel() {
     const p = project, t = compute(), o = p.org;
-    const dash = (v) => (String(v ?? '').trim() ? esc(v) : '<span class="muted">—</span>');
-    const verif = { none: 'Sin verificación', internal: 'Revisión interna', limited: 'Verificación externa con aseguramiento limitado', reasonable: 'Verificación externa con aseguramiento razonable' }[p.purpose.verification];
+    const d = (v) => (String(v ?? '').trim() ? String(v) : '—');
+    const verif = { none: 'Sin verificación', internal: 'Revisión interna', limited: 'Verificación externa con aseguramiento limitado', reasonable: 'Verificación externa con aseguramiento razonable' }[p.purpose.verification] || '—';
     const use = { internal: 'Gestión interna', public: 'Comunicación pública', program: 'Programa voluntario', regulatory: 'Requisito regulatorio o de cliente', offset: 'Base para neutralidad / compensación' }[p.purpose.intendedUse] || '';
     const statusTxt = { included: 'Incluida', excluded: 'Excluida', pending: 'Por evaluar' };
-    const factorRows = t.factors.map((x) => {
-      if (x.kind === 'climatiq') return `<tr><td>${esc(x.f.name)}<br><code>${esc(x.f.activity_id)}</code></td><td>${esc(x.f.source)}${x.f.source_dataset ? ' · ' + esc(x.f.source_dataset) : ''}</td><td>${esc(x.f.region_name || x.f.region)}</td><td>${esc(x.f.year)}</td></tr>`;
-      if (x.kind === 'manual') return `<tr><td>${esc(x.s.description)} — ${fmtN(x.s.manual.factor, 6)} kgCO₂e/${esc(x.s.manual.unit)}</td><td>${esc(x.s.manual.ref)}</td><td>—</td><td>—</td></tr>`;
-      const fac = p.facilities.find((f) => f.id === x.s.facilityId);
-      return `<tr><td>Electricidad de red — ${esc(facilityName(x.s.facilityId))}</td><td>Climatiq Energy API v1.5 (${esc((x.s.result.location.trail || []).map((tr) => tr.source || tr.name || '').filter(Boolean).join(', ') || 'factores de red')})</td><td>${esc(fac ? fac.region : '')}</td><td>${esc(x.s.elec.year || 'último disp.')}</td></tr>`;
-    }).join('');
+    const catLabel = (c) => `${c.scope === 3 ? '3.' + c.cat : 'A' + c.scope} ${c.name}`;
+    const s2name = p.settings.scope2Totals === 'market' ? 'mercado' : 'ubicación';
+    const hasBase = p.baseYear.totalT !== '' && num(p.baseYear.totalT) > 0;
+    const B = [];
+    const h2 = (text) => B.push({ t: 'h2', text });
+    const h3 = (text) => B.push({ t: 'h3', text });
+    const para = (...runs) => B.push({ t: 'p', runs: runs.map((r) => (typeof r === 'string' ? { text: r } : r)) });
+    const note = (text) => B.push({ t: 'p', muted: true, runs: [{ text }] });
+    const kv = (rows) => B.push({ t: 'kv', rows });
+    const table = (head, rows, opt = {}) => B.push({ t: 'table', head, rows, ...opt });
 
+    B.push({ t: 'eyebrow', text: 'Informe de gases de efecto invernadero' });
+    B.push({ t: 'h1', text: `${d(o.name)} — Inventario de GEI ${p.period.year}` });
+    note(`Preparado tomando como referencia ISO 14064-1:2018 y el GHG Protocol Corporate Standard. Emitido el ${new Date().toLocaleDateString('es')}.`);
+
+    h2('Resumen');
+    table(['Indicador', 'Valor'], [
+      ['Emisiones totales (Alcance 2 por ' + s2name + ')', fmtT(t.total) + ' tCO₂e'],
+      ['Alcance 1', fmtT(t.s1) + ' tCO₂e'],
+      ['Alcance 2 — ubicación / mercado', `${fmtT(t.s2loc)} / ${fmtT(t.s2mkt)} tCO₂e`],
+      ['Alcance 3', fmtT(t.s3) + ' tCO₂e'],
+      ['Incertidumbre combinada estimada', '±' + fmtN(t.uncertainty, 1) + '%'],
+      ...(hasBase ? [[`Variación vs. año base ${p.baseYear.year}`, fmtN(pct(t.total / 1000 - num(p.baseYear.totalT), num(p.baseYear.totalT)), 1) + '%']] : []),
+    ], { num: [1] });
+
+    h2('1. Organización que informa');
+    kv([['Razón social', d(o.name)], ['Identificador', d(o.taxId)], ['Sector', d(o.sector)],
+      ['País / dirección', d([o.country, o.address].filter(Boolean).join(' — '))],
+      ['Responsable', d([o.responsible, o.responsibleRole].filter(Boolean).join(', '))], ['Descripción', d(o.description)]]);
+
+    h2('2. Propósito, usuarios y verificación');
+    kv([['Objetivo', d(p.purpose.objective)], ['Usuarios previstos', d(p.purpose.users)], ['Uso previsto', d(use)],
+      ['Verificación', verif + (p.purpose.verifier ? ' — ' + p.purpose.verifier : '')], ['Período de reporte', `${p.period.start} a ${p.period.end}`]]);
+
+    h2('3. Límites organizacionales');
+    para('Enfoque de consolidación: ', { text: S.CONSOLIDATION[p.consolidation].name, b: true }, '. ' + S.CONSOLIDATION[p.consolidation].help);
+    table(['Instalación', 'Región', 'Dirección', '% consolidado'],
+      p.facilities.map((f) => [d(f.name), d(f.region), d(f.address), fmtN(facilityShare(f) * 100, 1) + '%']), { num: [3], widths: [3, 1, 4, 2] });
+
+    h2('4. Límites de informe');
+    para(`Umbral de materialidad para exclusiones: ${fmtN(p.boundaries.materiality, 1)}% de las emisiones totales.`);
+    table(['Alcance / categoría', 'ISO', 'Estado', 'Criterios / justificación'], S.CATEGORIES.map((c) => {
+      const st = p.boundaries.categories[c.id];
+      const crit = S.RELEVANCE_CRITERIA.filter((r) => st.criteria && st.criteria[r.id]).map((r) => r.label).join(', ');
+      return [catLabel(c), String(c.iso), statusTxt[st.status], [crit, st.justification].filter(Boolean).join(' — ')];
+    }), { widths: [3.2, 0.7, 1.2, 4.9] });
+
+    h2('5. Año base');
+    kv([['Año base', `${p.baseYear.year}${hasBase ? ` — ${fmtN(p.baseYear.totalT)} tCO₂e` : ''}`], ['Justificación', d(p.baseYear.justification)],
+      ['Política de recálculo', `${d(p.baseYear.policy)} Umbral: ${fmtN(p.baseYear.threshold, 1)}%.`]]);
+
+    h2('6. Resultados');
+    table(['Alcance', 'tCO₂e', '%'], [
+      ['Alcance 1 — emisiones directas', fmtT(t.s1), fmtN(pct(t.s1, t.total), 1)],
+      ['Alcance 2 — basado en ubicación', fmtT(t.s2loc), p.settings.scope2Totals === 'location' ? fmtN(pct(t.s2, t.total), 1) : '—'],
+      ['Alcance 2 — basado en mercado', fmtT(t.s2mkt), p.settings.scope2Totals === 'market' ? fmtN(pct(t.s2, t.total), 1) : '—'],
+      ['Alcance 3 — otras indirectas', fmtT(t.s3), fmtN(pct(t.s3, t.total), 1)],
+      [`Total (Alcance 2 por ${s2name})`, fmtT(t.total), '100'],
+      ['Remociones (no netas)', fmtT(t.removals), ''],
+      ['CO₂ biogénico (tCO₂, fuera de alcances)', fmtT(t.biogenic), ''],
+    ], { num: [1, 2], total: 4, sub: [5, 6], widths: [6, 2, 2] });
+    h3('Por categoría ISO 14064-1');
+    table(['Categoría', 'tCO₂e'], Object.entries(S.ISO_CATEGORIES).map(([k, l]) => [l, fmtT(t.byIso[k] || 0)]), { num: [1], widths: [8, 2] });
+    h3('Por categoría GHG Protocol');
+    table(['Categoría', 'tCO₂e'], S.CATEGORIES.filter((c) => t.byCat[c.id]).map((c) => [catLabel(c), fmtT(t.byCat[c.id])]), { num: [1], widths: [8, 2] });
+    h3('Por instalación');
+    table(['Instalación', 'tCO₂e'], Object.entries(t.byFac).sort((a, b) => b[1] - a[1]).map(([id, v]) => [facilityName(id), fmtT(v)]), { num: [1], widths: [8, 2] });
+    h3('Por gas (masa)');
+    table(['Gas', 'Toneladas'], [['CO₂', fmtT(t.gases.co2, 3)], ['CH₄', fmtT(t.gases.ch4, 4)], ['N₂O', fmtT(t.gases.n2o, 4)], ['Otros GEI (HFCs, PFCs, SF₆, NF₃) en CO₂e', fmtT(t.gases.other, 3)]], { num: [1], widths: [8, 2] });
+    note('Desglose disponible solo para factores que publican emisiones por gas.');
+
+    h2('7. Metodología de cuantificación');
+    para(`Las emisiones se cuantificaron como dato de actividad × factor de emisión, expresadas en CO₂e con los potenciales de calentamiento global del IPCC ${settings.calculationMethod.toUpperCase()} (horizonte de 100 años) cuando el factor lo permite. Los factores provienen de la base de datos de Climatiq (versión de datos ${settings.dataVersion}) y de fuentes propias documentadas. El Alcance 2 se calculó con los métodos basado en ubicación y basado en mercado según el GHG Protocol Scope 2 Guidance; las emisiones aguas arriba de la electricidad se asignaron a Alcance 3, categoría 3${p.boundaries.categories.s3_3.status === 'included' ? '' : ' (categoría excluida en este inventario)'}.`);
+    table(['Factor', 'Fuente', 'Región', 'Año'], t.factors.map((x) => {
+      if (x.kind === 'climatiq') return [`${x.f.name}\n${x.f.activity_id}`, `${x.f.source}${x.f.source_dataset ? ' · ' + x.f.source_dataset : ''}`, d(x.f.region_name || x.f.region), d(x.f.year)];
+      if (x.kind === 'manual') return [`${x.s.description} — ${fmtN(x.s.manual.factor, 6)} kgCO₂e/${x.s.manual.unit}`, x.s.manual.ref, '—', '—'];
+      const fac = p.facilities.find((f) => f.id === x.s.facilityId);
+      const trail = (x.s.result.location.trail || []).map((tr) => tr.source || tr.name || '').filter(Boolean).join(', ') || 'factores de red';
+      return [`Electricidad de red — ${facilityName(x.s.facilityId)}`, `Climatiq Energy API v1.5 (${trail})`, d(fac && fac.region), d(x.s.elec.year || 'último disp.')];
+    }), { widths: [4.5, 3.5, 1.2, 0.8], empty: 'Sin factores.' });
+
+    h3('Detalle por fuente');
+    table(['Fuente', 'Instalación', 'Categoría', 'tCO₂e', '±%'], t.rows.map((r) => [
+      r.s.description + (r.derived ? ' (aguas arriba)' : ''), facilityName(r.s.facilityId),
+      (r.scope === 3 ? '3.' + r.cat.cat : 'A' + r.scope) + ' ' + r.cat.name, fmtT(r.kg, 3), fmtN(r.u, 0)]), { num: [3, 4], widths: [3, 2, 3, 1.2, 0.8], empty: 'Sin fuentes calculadas.' });
+
+    h2('8. Exclusiones');
+    const exc = S.CATEGORIES.filter((c) => p.boundaries.categories[c.id].status === 'excluded');
+    if (exc.length) exc.forEach((c) => para({ text: catLabel(c) + ': ', b: true }, d(p.boundaries.categories[c.id].justification)));
+    else para('No se declararon exclusiones.');
+
+    h2('9. Incertidumbre y calidad de datos');
+    para('Incertidumbre combinada estimada del inventario: ', { text: `±${fmtN(t.uncertainty, 1)}%`, b: true },
+      ` (propagación de errores, IPCC 2006 enfoque 1). Principios confirmados: ${S.PRINCIPLES.filter((x) => p.purpose.principles[x.id]).map((x) => x.name).join(', ') || 'ninguno'}.`);
+
+    h2('10. Declaración');
+    para('Este inventario fue preparado tomando como referencia la norma ISO 14064-1:2018 y el GHG Protocol. ' +
+      (p.purpose.verification === 'limited' || p.purpose.verification === 'reasonable'
+        ? `Será sometido a verificación externa (${verif.toLowerCase()}) conforme a ISO 14064-3.`
+        : 'Este informe no ha sido verificado por un tercero independiente.'));
+    B.push({ t: 'sign', lines: [d(o.responsible), d(o.responsibleRole)] });
+    return { blocks: B, t };
+  }
+
+  function blocksToHtml(blocks) {
+    const runs = (rs) => rs.map((r) => (r.b ? `<strong>${esc(r.text)}</strong>` : esc(r.text))).join('');
+    const cell = (c) => esc(c).replace(/\n/g, '<br><small class="muted">') + (String(c).includes('\n') ? '</small>' : '');
+    return blocks.map((b) => {
+      switch (b.t) {
+        case 'eyebrow': return `<div style="color:var(--accent);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">${esc(b.text)}</div>`;
+        case 'h1': return `<h1>${esc(b.text)}</h1>`;
+        case 'h2': return `<h2>${esc(b.text)}</h2>`;
+        case 'h3': return `<h3>${esc(b.text)}</h3>`;
+        case 'p': return `<p${b.muted ? ' class="muted" style="font-size:.85rem"' : ''}>${runs(b.runs)}</p>`;
+        case 'kv': return `<dl>${b.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+        case 'sign': return `<p style="margin-top:40px">______________________________<br>${esc(b.lines[0])}<br><span class="muted">${esc(b.lines[1])}</span></p>`;
+        case 'table': {
+          const n = (i) => ((b.num || []).includes(i) ? ' class="num"' : '');
+          const body = b.rows.length ? b.rows.map((r, ri) => `<tr${ri === b.total ? ' class="total"' : (b.sub || []).includes(ri) ? ' class="sub"' : ''}>${r.map((c, i) => `<td${n(i)}>${cell(c)}</td>`).join('')}</tr>`).join('')
+            : `<tr><td colspan="${b.head.length}" class="muted">${esc(b.empty || 'Sin datos.')}</td></tr>`;
+          return `<div class="table-wrap"><table><thead><tr>${b.head.map((h, i) => `<th${n(i)}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+        }
+        default: return '';
+      }
+    }).join('\n');
+  }
+
+  function renderInforme() {
+    const { blocks, t } = reportModel();
     return `
       <div class="row no-print" style="margin-bottom:16px">
-        <button class="btn" data-action="print">Imprimir / guardar PDF</button>
+        <button class="btn" data-action="export-word" ${ui.wordBusy ? 'disabled' : ''}>${ui.wordBusy ? '<span class="spinner"></span> Generando…' : 'Descargar informe Word'}</button>
+        <button class="btn ghost" data-action="print">Imprimir / guardar PDF</button>
         <button class="btn ghost" data-action="export-csv">Exportar CSV</button>
         <button class="btn ghost" data-action="export-json">Guardar proyecto (JSON)</button>
       </div>
       ${t.pending.length || boundaryIssues().length ? '<div class="callout warn no-print"><p>El informe tiene elementos pendientes (fuentes sin calcular o categorías sin evaluar). Revisa los pasos 3, 5 y 7.</p></div>' : ''}
-      <article class="report">
-        <div class="eyebrow" style="color:var(--accent);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Informe de gases de efecto invernadero</div>
-        <h1>${dash(o.name)} — Inventario de GEI ${esc(p.period.year)}</h1>
-        <p class="muted">Preparado tomando como referencia ISO 14064-1:2018 y el GHG Protocol Corporate Standard. Emitido el ${new Date().toLocaleDateString('es')}.</p>
+      <article class="report">${blocksToHtml(blocks)}</article>`;
+  }
 
-        <h2>1. Organización que informa</h2>
-        <dl>
-          <dt>Razón social</dt><dd>${dash(o.name)}</dd>
-          <dt>Identificador</dt><dd>${dash(o.taxId)}</dd>
-          <dt>Sector</dt><dd>${dash(o.sector)}</dd>
-          <dt>País / dirección</dt><dd>${dash([o.country, o.address].filter(Boolean).join(' — '))}</dd>
-          <dt>Responsable</dt><dd>${dash([o.responsible, o.responsibleRole].filter(Boolean).join(', '))}</dd>
-          <dt>Descripción</dt><dd>${dash(o.description)}</dd>
-        </dl>
+  // ------------------------------------------------------------
+  // Exportación a Word (.docx) con la librería docx (se carga solo al usarla)
+  // ------------------------------------------------------------
+  const DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js';
+  function loadDocx() {
+    if (window.docx) return Promise.resolve(window.docx);
+    if (loadDocx.p) return loadDocx.p;
+    loadDocx.p = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = DOCX_URL;
+      s.onload = () => (window.docx ? resolve(window.docx) : reject(new Error('La librería docx no se inicializó.')));
+      s.onerror = () => { loadDocx.p = null; reject(new Error('No se pudo descargar la librería para Word. Revisa tu conexión a internet.')); };
+      document.head.appendChild(s);
+    });
+    return loadDocx.p;
+  }
 
-        <h2>2. Propósito, usuarios y verificación</h2>
-        <dl>
-          <dt>Objetivo</dt><dd>${dash(p.purpose.objective)}</dd>
-          <dt>Usuarios previstos</dt><dd>${dash(p.purpose.users)}</dd>
-          <dt>Uso previsto</dt><dd>${dash(use)}</dd>
-          <dt>Verificación</dt><dd>${esc(verif)}${p.purpose.verifier ? ' — ' + esc(p.purpose.verifier) : ''}</dd>
-          <dt>Período de reporte</dt><dd>${esc(p.period.start)} a ${esc(p.period.end)}</dd>
-        </dl>
+  async function exportWord() {
+    ui.wordBusy = true; if (currentStep().id === 'informe') render();
+    try {
+      const D = await loadDocx();
+      const { blocks } = reportModel();
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, Footer, Header, PageNumber } = D;
+      const GREEN = '1F7A5A', MUTED = '5D6B64', LINE = 'D5DBD3';
+      const PAGE_W = 11906, MARGIN = 1134, CONTENT_W = PAGE_W - 2 * MARGIN;
+      const border = { style: BorderStyle.SINGLE, size: 4, color: LINE };
+      const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 
-        <h2>3. Límites organizacionales</h2>
-        <p>Enfoque de consolidación: <strong>${S.CONSOLIDATION[p.consolidation].name}</strong>. ${S.CONSOLIDATION[p.consolidation].help}</p>
-        <table><thead><tr><th>Instalación</th><th>Región</th><th>Dirección</th><th class="num">% consolidado</th></tr></thead>
-          <tbody>${p.facilities.map((f) => `<tr><td>${esc(f.name)}</td><td>${esc(f.region)}</td><td>${esc(f.address)}</td><td class="num">${fmtN(facilityShare(f) * 100, 1)}%</td></tr>`).join('')}</tbody></table>
+      const cellParas = (text, o = {}) => String(text ?? '').split('\n').map((line, i) => new Paragraph({
+        alignment: o.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+        spacing: { before: 40, after: 40 },
+        children: [new TextRun({ text: line, bold: !!o.bold, size: i > 0 ? 15 : 18, color: o.color || (i > 0 ? MUTED : undefined), font: i > 0 ? 'Consolas' : undefined })],
+      }));
+      const widthsFor = (b) => {
+        const w = b.widths || b.head.map(() => 1);
+        const sum = w.reduce((a, x) => a + x, 0);
+        return w.map((x) => Math.round((x / sum) * CONTENT_W));
+      };
+      const mkTable = (b) => {
+        const cols = widthsFor(b);
+        const right = (i) => (b.num || []).includes(i);
+        const head = new TableRow({ tableHeader: true, children: b.head.map((h, i) => new TableCell({
+          width: { size: cols[i], type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'E3F1EA' },
+          margins: { left: 90, right: 90 }, children: cellParas(h, { bold: true, right: right(i), color: '165C43' }) })) });
+        const rows = b.rows.length ? b.rows.map((r, ri) => new TableRow({ children: r.map((c, i) => new TableCell({
+          width: { size: cols[i], type: WidthType.DXA }, margins: { left: 90, right: 90 },
+          shading: ri === b.total ? { type: ShadingType.CLEAR, color: 'auto', fill: 'F0F2EE' } : undefined,
+          children: cellParas(c, { right: right(i), bold: ri === b.total, color: (b.sub || []).includes(ri) ? MUTED : undefined }) })) }))
+          : [new TableRow({ children: [new TableCell({ columnSpan: b.head.length, width: { size: CONTENT_W, type: WidthType.DXA }, children: cellParas(b.empty || 'Sin datos.', { color: MUTED }) })] })];
+        return new Table({ width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: cols, rows: [head, ...rows],
+          borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border } });
+      };
+      const mkKv = (b) => {
+        const cols = [Math.round(CONTENT_W * 0.3), CONTENT_W - Math.round(CONTENT_W * 0.3)];
+        return new Table({ width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: cols,
+          borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideVertical: noBorder, insideHorizontal: border },
+          rows: b.rows.map(([k, v]) => new TableRow({ children: [
+            new TableCell({ width: { size: cols[0], type: WidthType.DXA }, margins: { right: 120 }, children: cellParas(k, { color: MUTED }) }),
+            new TableCell({ width: { size: cols[1], type: WidthType.DXA }, children: cellParas(v) })] })) });
+      };
+      const gap = () => new Paragraph({ spacing: { after: 120 }, children: [] });
 
-        <h2>4. Límites de informe</h2>
-        <p>Umbral de materialidad para exclusiones: ${fmtN(p.boundaries.materiality, 1)}% de las emisiones totales.</p>
-        <table><thead><tr><th>Alcance / categoría</th><th>ISO 14064-1</th><th>Estado</th><th>Criterios / justificación</th></tr></thead>
-          <tbody>${S.CATEGORIES.map((c) => {
-            const st = p.boundaries.categories[c.id];
-            const crit = S.RELEVANCE_CRITERIA.filter((r) => st.criteria && st.criteria[r.id]).map((r) => r.label).join(', ');
-            return `<tr><td>${c.scope === 3 ? '3.' + c.cat : 'A' + c.scope} ${esc(c.name)}</td><td>${c.iso}</td><td>${statusTxt[st.status]}</td><td>${esc([crit, st.justification].filter(Boolean).join(' — '))}</td></tr>`;
-          }).join('')}</tbody></table>
+      const children = [];
+      blocks.forEach((b) => {
+        switch (b.t) {
+          case 'eyebrow': children.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: b.text.toUpperCase(), bold: true, color: GREEN, size: 17, characterSpacing: 20 })] })); break;
+          case 'h1': children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(b.text)] })); break;
+          case 'h2': children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(b.text)] })); break;
+          case 'h3': children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(b.text)] })); break;
+          case 'p': children.push(new Paragraph({ spacing: { after: 120 }, children: b.runs.map((r) => new TextRun({ text: r.text, bold: !!r.b, color: b.muted ? MUTED : undefined, size: b.muted ? 18 : undefined })) })); break;
+          case 'kv': children.push(mkKv(b), gap()); break;
+          case 'table': children.push(mkTable(b), gap()); break;
+          case 'sign': children.push(
+            new Paragraph({ spacing: { before: 720 }, children: [new TextRun('______________________________')] }),
+            new Paragraph({ children: [new TextRun(b.lines[0])] }),
+            new Paragraph({ children: [new TextRun({ text: b.lines[1], color: MUTED })] })); break;
+          default: break;
+        }
+      });
 
-        <h2>5. Año base</h2>
-        <dl>
-          <dt>Año base</dt><dd>${esc(p.baseYear.year)}${p.baseYear.totalT !== '' && num(p.baseYear.totalT) > 0 ? ` — ${fmtN(p.baseYear.totalT)} tCO₂e` : ''}</dd>
-          <dt>Justificación</dt><dd>${dash(p.baseYear.justification)}</dd>
-          <dt>Política de recálculo</dt><dd>${dash(p.baseYear.policy)} Umbral: ${fmtN(p.baseYear.threshold, 1)}%.</dd>
-        </dl>
+      const doc = new Document({
+        creator: 'Calculadora Huella de Carbono',
+        title: `Inventario de GEI ${project.period.year} — ${project.org.name || ''}`,
+        description: 'Informe de gases de efecto invernadero (GHG Protocol / ISO 14064-1)',
+        styles: {
+          default: {
+            document: { run: { font: 'Calibri', size: 21 }, paragraph: { spacing: { line: 276 } } },
+            title: { run: { font: 'Calibri', size: 40, bold: true, color: '1B2420' }, paragraph: { spacing: { after: 120 } } },
+            heading1: { run: { font: 'Calibri', size: 28, bold: true, color: GREEN }, paragraph: { spacing: { before: 360, after: 140 }, border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: LINE, space: 4 } } } },
+            heading2: { run: { font: 'Calibri', size: 23, bold: true, color: '1B2420' }, paragraph: { spacing: { before: 240, after: 100 } } },
+          },
+        },
+        sections: [{
+          properties: { page: { size: { width: PAGE_W, height: 16838 }, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } } },
+          headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `${project.org.name || 'Inventario de GEI'} · Inventario ${project.period.year}`, size: 16, color: MUTED })] })] }) },
+          footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ size: 16, color: MUTED, children: ['Página ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES] })] })] }) },
+          children,
+        }],
+      });
+      const blob = await Packer.toBlob(doc);
+      download(`informe-huella-${slug()}-${project.period.year}.docx`, blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      toast('Informe Word descargado.');
+    } catch (e) {
+      toast('No se pudo generar el Word: ' + e.message, true);
+    } finally {
+      ui.wordBusy = false; if (currentStep().id === 'informe') render();
+    }
+  }
 
-        <h2>6. Resultados</h2>
-        <table><thead><tr><th>Alcance</th><th class="num">tCO₂e</th><th class="num">%</th></tr></thead><tbody>
-          <tr><td>Alcance 1 — emisiones directas</td><td class="num">${fmtT(t.s1)}</td><td class="num">${fmtN(pct(t.s1, t.total), 1)}</td></tr>
-          <tr><td>Alcance 2 — basado en ubicación</td><td class="num">${fmtT(t.s2loc)}</td><td class="num">${p.settings.scope2Totals === 'location' ? fmtN(pct(t.s2, t.total), 1) : '—'}</td></tr>
-          <tr><td>Alcance 2 — basado en mercado</td><td class="num">${fmtT(t.s2mkt)}</td><td class="num">${p.settings.scope2Totals === 'market' ? fmtN(pct(t.s2, t.total), 1) : '—'}</td></tr>
-          <tr><td>Alcance 3 — otras indirectas</td><td class="num">${fmtT(t.s3)}</td><td class="num">${fmtN(pct(t.s3, t.total), 1)}</td></tr>
-          <tr class="total"><td>Total (Alcance 2 por ${p.settings.scope2Totals === 'market' ? 'mercado' : 'ubicación'})</td><td class="num">${fmtT(t.total)}</td><td class="num">100</td></tr>
-          <tr class="sub"><td>Remociones (no netas)</td><td class="num">${fmtT(t.removals)}</td><td></td></tr>
-          <tr class="sub"><td>CO₂ biogénico (tCO₂, fuera de alcances)</td><td class="num">${fmtT(t.biogenic)}</td><td></td></tr>
-        </tbody></table>
-        <h3>Por categoría ISO 14064-1</h3>
-        <table><tbody>${Object.entries(S.ISO_CATEGORIES).map(([k, l]) => `<tr><td>${esc(l)}</td><td class="num">${fmtT(t.byIso[k] || 0)} tCO₂e</td></tr>`).join('')}</tbody></table>
-        <h3>Por categoría GHG Protocol</h3>
-        <table><tbody>${S.CATEGORIES.filter((c) => t.byCat[c.id]).map((c) => `<tr><td>${c.scope === 3 ? '3.' + c.cat : 'A' + c.scope} ${esc(c.name)}</td><td class="num">${fmtT(t.byCat[c.id])} tCO₂e</td></tr>`).join('')}</tbody></table>
-        <h3>Por gas (Alcance 1–3, masa)</h3>
-        <table><tbody>
-          <tr><td>CO₂</td><td class="num">${fmtT(t.gases.co2, 3)} t</td></tr><tr><td>CH₄</td><td class="num">${fmtT(t.gases.ch4, 4)} t</td></tr>
-          <tr><td>N₂O</td><td class="num">${fmtT(t.gases.n2o, 4)} t</td></tr><tr><td>Otros GEI (HFCs, PFCs, SF₆, NF₃) en CO₂e</td><td class="num">${fmtT(t.gases.other, 3)} t</td></tr>
-        </tbody></table>
-        <p class="muted" style="font-size:.85rem">Desglose disponible solo para factores que publican emisiones por gas.</p>
+  // ------------------------------------------------------------
+  // Instrucciones de uso
+  // ------------------------------------------------------------
+  function renderAyuda() {
+    const step = (n, id, title, body) => `
+      <div class="help-step">
+        <div class="help-num">${n}</div>
+        <div><h3><a href="#/${id}">${title}</a></h3>${body}</div>
+      </div>`;
+    const faq = (q, a) => `<details class="faq"><summary>${q}</summary><div>${a}</div></details>`;
+    return pageHead('Ayuda', 'Instrucciones de uso',
+      'Cómo elaborar un inventario de gases de efecto invernadero con esta herramienta, de la recopilación de datos al informe en Word.') + `
+      <div class="card">
+        <h2>Antes de empezar</h2>
+        <div class="grid two">
+          <div>
+            <h3>Datos que debes pedir a la organización</h3>
+            <ul class="help-list">
+              <li><strong>Electricidad:</strong> facturas de los 12 meses por instalación (kWh) y certificados renovables (I-REC, GO) o contratos PPA, si existen.</li>
+              <li><strong>Combustibles:</strong> facturas o registros de gas natural, GLP, diésel, gasolina y otros (m³, L, kg o kWh).</li>
+              <li><strong>Flota:</strong> litros cargados por vehículo, o kilómetros recorridos y tipo de vehículo.</li>
+              <li><strong>Refrigerantes:</strong> informes de mantención con los kg recargados por tipo de gas (R-410A, R-134a, etc.).</li>
+              <li><strong>Alcance 3:</strong> compras (kg o gasto), residuos (t por tratamiento), viajes (km o tramos), transporte de carga (t·km) y una encuesta de traslado de los empleados.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Configuración</h3>
+            <ul class="help-list">
+              <li>La conexión a Climatiq usa la API key configurada en Vercel. Prueba que funcione con <a href="#/inicio">Inicio → Probar conexión</a>.</li>
+              <li>Si el sitio pide un código de acceso, ingrésalo en <a href="#" data-action="open-settings">Ajustes</a>; queda guardado en este navegador.</li>
+              <li>En Ajustes también eliges el PCG (AR6 recomendado) y la versión de datos de Climatiq. Mantén la misma versión durante todo el inventario.</li>
+              <li>¿Primera vez? Presiona <strong>Cargar ejemplo</strong> en Inicio para ver un inventario completo de muestra.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
 
-        <h2>7. Metodología de cuantificación</h2>
-        <p>Las emisiones se cuantificaron como dato de actividad × factor de emisión, expresadas en CO₂e con los potenciales de calentamiento global del IPCC ${esc(settings.calculationMethod.toUpperCase())} (horizonte de 100 años) cuando el factor lo permite. Los factores provienen de la base de datos de Climatiq (versión de datos ${esc(settings.dataVersion)}) y de fuentes propias documentadas. El Alcance 2 se calculó con los métodos basado en ubicación y basado en mercado según el GHG Protocol Scope 2 Guidance; las emisiones aguas arriba de la electricidad se asignaron a Alcance 3, categoría 3${p.boundaries.categories.s3_3.status === 'included' ? '' : ' (categoría excluida en este inventario)'}.</p>
-        <table><thead><tr><th>Factor</th><th>Fuente</th><th>Región</th><th>Año</th></tr></thead><tbody>${factorRows || '<tr><td colspan="4" class="muted">Sin factores.</td></tr>'}</tbody></table>
+      <div class="card">
+        <h2>Paso a paso</h2>
+        ${step(1, 'organizacion', 'Organización y objetivo', '<p>Completa los datos de la empresa, el responsable del inventario, el objetivo (p. ej. línea base, reporte a clientes, HuellaChile) y quiénes usarán el informe. Indica si habrá verificación externa: eso define el nivel de exigencia de la evidencia.</p>')}
+        ${step(2, 'limites-org', 'Límites organizacionales', '<p>Elige el enfoque de consolidación; lo más común es <strong>control operacional</strong>. Agrega cada instalación (oficina, planta, bodega, flota) con su <strong>código de región</strong>, por ejemplo <code>CL</code>, <code>MX</code> o <code>ES</code>. Ese código es necesario para calcular la electricidad.</p>')}
+        ${step(3, 'limites-informe', 'Límites de informe', '<p>Alcance 1 y 2 vienen incluidos; marca como "No aplica" lo que no exista y explica por qué. En el Alcance 3, evalúa cada una de las 15 categorías: marca los criterios de relevancia y decide entre <strong>Incluida</strong> o <strong>Excluida</strong> (con justificación). No deben quedar categorías "Por evaluar". Aquí también eliges si el total usa el Alcance 2 por ubicación o por mercado.</p>')}
+        ${step(4, 'periodo', 'Período y año base', '<p>Define el período (normalmente un año calendario) y el año base. Si es el primer inventario, el año base suele ser el mismo año. Revisa la política de recálculo propuesta y el umbral (5%).</p>')}
+        ${step(5, 'fuentes', 'Fuentes y datos de actividad', `<p>Elige la categoría y la instalación, y presiona <strong>+ Agregar fuente</strong>. Abre la fuente y elige un método:</p>
+          <ul class="help-list">
+            <li><strong>Factor Climatiq:</strong> presiona <em>Buscar factor</em>, escribe en inglés (o usa las sugerencias), revisa fuente, región y año, y presiona <em>Usar</em>. Luego ingresa la cantidad y la unidad.</li>
+            <li><strong>Electricidad:</strong> ingresa los kWh totales, los certificados renovables y la energía renovable con conexión directa. Se calculan ubicación y mercado, y las pérdidas de red van a la categoría 3.3.</li>
+            <li><strong>Factor propio:</strong> úsalo para factores oficiales nacionales o del proveedor. Indica siempre la referencia.</li>
+          </ul>
+          <p>Completa la calidad del dato (medido, calculado o estimado) y la <strong>evidencia</strong> (qué documento respalda el dato). Usa <em>Duplicar</em> para registrar fuentes parecidas más rápido.</p>`)}
+        ${step(6, 'resultados', 'Cálculo y resultados', '<p>Presiona <strong>Calcular / recalcular todo</strong>. Revisa los totales por alcance, categoría, instalación y gas. Si una fuente muestra error, ábrela en el paso 5 para ver el detalle. Si cambias un dato, esa fuente vuelve a quedar pendiente hasta que recalcules.</p>')}
+        ${step(7, 'calidad', 'Calidad e incertidumbre', '<p>Confirma los cinco principios y revisa la lista de verificación: todo debe quedar en ✓ antes de emitir el informe. Ajusta la incertidumbre de las fuentes grandes si tienes mejor información.</p>')}
+        ${step(8, 'informe', 'Informe', '<p>Revisa el informe en pantalla y presiona <strong>Descargar informe Word</strong> para obtener un <code>.docx</code> editable, con portada de datos, tablas, metodología, exclusiones y espacio para la firma. También puedes imprimirlo o guardarlo en PDF, o exportar el detalle a CSV para Excel.</p>')}
+      </div>
 
-        <h2>8. Exclusiones</h2>
-        ${S.CATEGORIES.filter((c) => p.boundaries.categories[c.id].status === 'excluded').map((c) => `<p><strong>${c.scope === 3 ? '3.' + c.cat : 'A' + c.scope} ${esc(c.name)}:</strong> ${dash(p.boundaries.categories[c.id].justification)}</p>`).join('') || '<p>No se declararon exclusiones.</p>'}
+      <div class="grid two">
+        <div class="card">
+          <h2>Guardar y compartir</h2>
+          <ul class="help-list">
+            <li>El trabajo se <strong>guarda solo</strong> en este navegador. Si borras los datos del navegador o cambias de equipo, se pierde.</li>
+            <li><strong>Guardar proyecto</strong> descarga un archivo <code>.json</code>, que es el respaldo editable. Guárdalo en la carpeta del cliente.</li>
+            <li><strong>Abrir proyecto</strong> carga ese <code>.json</code> para seguir trabajando, en este u otro equipo.</li>
+            <li><strong>Descargar Word</strong> genera el informe final (<code>.docx</code>) para revisar, editar y entregar al cliente.</li>
+            <li>Para trabajar con varios clientes, guarda un <code>.json</code> por cliente y ábrelo cuando lo necesites.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2>Consejos para elegir factores</h2>
+          <ul class="help-list">
+            <li>Prefiere factores <strong>del país</strong> y del <strong>año más cercano</strong> al período.</li>
+            <li>Busca en inglés: <em>natural gas, diesel, petrol, LPG, R-410A, flight, hotel stay, landfill, paper</em>.</li>
+            <li>Si no hay resultados para tu país, borra la región para ver factores de otras regiones (p. ej. DEFRA o EPA) y deja documentado el supuesto.</li>
+            <li>Para la electricidad de Chile, si Climatiq no tiene datos para <code>CL</code>, usa <strong>Factor propio</strong> con el factor oficial del Sistema Eléctrico Nacional publicado por el Ministerio de Energía.</li>
+            <li>Los datos físicos (kWh, litros, kg) son más exactos que los basados en gasto (dinero).</li>
+          </ul>
+        </div>
+      </div>
 
-        <h2>9. Incertidumbre y calidad de datos</h2>
-        <p>Incertidumbre combinada estimada del inventario: <strong>±${fmtN(t.uncertainty, 1)}%</strong> (propagación de errores, IPCC 2006 enfoque 1). Principios confirmados: ${S.PRINCIPLES.filter((x) => p.purpose.principles[x.id]).map((x) => x.name).join(', ') || 'ninguno'}.</p>
+      <div class="card">
+        <h2>Problemas frecuentes</h2>
+        ${faq('"Falta la API key"', 'La variable <code>CLIMATIQ_API_KEY</code> no está configurada en Vercel o no se hizo <em>Redeploy</em> después de agregarla.')}
+        ${faq('"Código de acceso inválido"', 'Ingresa en <a href="#" data-action="open-settings">Ajustes</a> exactamente el mismo valor que <code>APP_ACCESS_CODE</code> en Vercel.')}
+        ${faq('La búsqueda no encuentra factores', 'Escribe en inglés, quita el filtro de región o de año, o prueba un término más general. Si aparece "existen factores premium", esos datos requieren un plan pagado de Climatiq.')}
+        ${faq('"La instalación no tiene código de región"', 'Ve a <a href="#/limites-org">Límites organizacionales</a> y completa el código (p. ej. <code>CL</code>) de la instalación de esa fuente.')}
+        ${faq('Una fuente dice "Datos incompletos"', 'Falta elegir el factor o ingresar la cantidad. En el factor propio se necesitan la cantidad y el factor.')}
+        ${faq('Una categoría no aparece al agregar una fuente', 'Solo aparecen las categorías marcadas como <strong>Incluida</strong> en el paso 3.')}
+        ${faq('El Word no se descarga', 'La primera descarga necesita internet para cargar el generador de Word. Revisa tu conexión y que el navegador no esté bloqueando las descargas.')}
+        ${faq('Abrí la página como archivo y la búsqueda no funciona', 'La API solo funciona en el sitio publicado en Vercel o con <code>vercel dev</code>. Abriendo <code>index.html</code> directamente solo funcionan los factores propios.')}
+      </div>
 
-        <h2>10. Declaración</h2>
-        <p>Este inventario fue preparado tomando como referencia la norma ISO 14064-1:2018 y el GHG Protocol. ${p.purpose.verification === 'limited' || p.purpose.verification === 'reasonable' ? `Será sometido a verificación externa (${esc(verif.toLowerCase())}) conforme a ISO 14064-3.` : 'Este informe no ha sido verificado por un tercero independiente.'}</p>
-        <p style="margin-top:40px">______________________________<br>${dash(o.responsible)}<br><span class="muted">${dash(o.responsibleRole)}</span></p>
-      </article>`;
+      <div class="card">
+        <h2>Flujo sugerido para ofrecer el servicio</h2>
+        <ol class="help-list">
+          <li><strong>Reunión inicial:</strong> objetivo, usuarios del informe, instalaciones y enfoque de consolidación (pasos 1 y 2).</li>
+          <li><strong>Evaluación de límites:</strong> revisa con el cliente qué categorías de Alcance 3 son relevantes (paso 3).</li>
+          <li><strong>Solicitud de datos:</strong> envía la lista de "Datos que debes pedir", con un plazo.</li>
+          <li><strong>Carga y cálculo:</strong> registra las fuentes, calcula y revisa los valores atípicos (pasos 5 y 6).</li>
+          <li><strong>Control de calidad:</strong> completa la lista de verificación (paso 7).</li>
+          <li><strong>Entrega:</strong> descarga el Word, agrega conclusiones y recomendaciones de reducción, y entrégalo junto con el <code>.json</code> de respaldo.</li>
+        </ol>
+      </div>`;
   }
 
   // ============================================================
@@ -1211,6 +1471,7 @@
     },
     calculate() { calculateAll(); },
     print() { window.print(); },
+    'export-word'() { if (!ui.wordBusy) exportWord(); },
     'export-csv'() { exportCsv(); },
     'export-json'() { download(`huella-${slug()}-${project.period.year}.json`, JSON.stringify(project, null, 2), 'application/json'); },
   };

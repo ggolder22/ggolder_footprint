@@ -15,9 +15,14 @@ Guía el proceso completo que piden el **GHG Protocol Corporate Standard** (más
 | 5. Fuentes y datos de actividad | Fuentes por instalación, búsqueda de factores en Climatiq, factores propios y calidad del dato | ISO 14064-1 §6.2 · GHG cap. 6 |
 | 6. Cálculo y resultados | Cálculo por lotes; Alcance 2 dual (ubicación y mercado); resultados por alcance, categoría ISO, instalación y gas | Scope 2 Guidance |
 | 7. Calidad e incertidumbre | Principios, lista de verificación e incertidumbre combinada (IPCC 2006, enfoque 1) | ISO 14064-1 §8 · GHG cap. 7 |
-| 8. Informe | Informe imprimible o en PDF con el contenido de ISO 14064-1 §9.3, más exportación a CSV y JSON | ISO 14064-1 §9 · GHG cap. 9 |
+| 8. Informe | Informe en **Word (.docx)** editable, imprimible o en PDF, con el contenido de ISO 14064-1 §9.3, más exportación a CSV | ISO 14064-1 §9 · GHG cap. 9 |
 
-Los datos se guardan automáticamente en el navegador (localStorage). Usa **Guardar archivo** para descargar el proyecto en JSON y **Abrir archivo** para retomarlo en otro equipo o pasárselo a un cliente.
+Dentro de la app, el menú **Instrucciones** explica el uso paso a paso, qué datos pedir al cliente, cómo elegir factores y cómo resolver los problemas frecuentes.
+
+Los datos se guardan automáticamente en el navegador (localStorage). Botones de la barra superior:
+- **Descargar Word**: genera el informe final en `.docx` (con la librería [docx](https://www.npmjs.com/package/docx), que se carga desde un CDN solo al usarla).
+- **Guardar proyecto**: descarga un respaldo `.json` editable.
+- **Abrir proyecto**: carga un `.json` para retomarlo en este u otro equipo.
 
 ## Estructura
 

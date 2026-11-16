@@ -23,10 +23,12 @@
     </div>
     <div class="topbar-actions">
       <span id="save-status" class="save-status"></span>
-      <button class="btn ghost" data-action="export-json" title="Descargar el proyecto como archivo JSON">Guardar archivo</button>
-      <label class="btn ghost" title="Abrir un proyecto guardado">
-        Abrir archivo<input type="file" accept="application/json,.json" id="import-file" hidden>
+      <button class="btn" data-action="export-word" title="Descargar el informe del inventario en Word (.docx)">Descargar Word</button>
+      <button class="btn ghost" data-action="export-json" title="Respaldo del proyecto (.json) para volver a abrirlo y seguir editando">Guardar proyecto</button>
+      <label class="btn ghost" title="Abrir un proyecto guardado (.json)">
+        Abrir proyecto<input type="file" accept="application/json,.json" id="import-file" hidden>
       </label>
+      <button class="btn ghost" data-action="go" data-step="ayuda">Instrucciones</button>
       <button class="btn ghost" data-action="open-settings">Ajustes</button>
     </div>
   </header>

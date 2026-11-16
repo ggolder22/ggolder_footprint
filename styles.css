@@ -158,6 +158,20 @@ tr.sub td { color: var(--muted); }
 .process strong { display: block; }
 .process span { color: var(--muted); font-size: .88rem; }
 
+/* ---------- Ayuda ---------- */
+.help-step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.help-step:first-of-type { border-top: 0; }
+.help-step h3 { margin-bottom: 4px; }
+.help-step h3 a { color: var(--text); text-decoration: none; }
+.help-step h3 a:hover { color: var(--accent); }
+.help-step p, .help-list { font-size: .9rem; }
+.help-num { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: .85rem; }
+.help-list { margin: 0 0 .6em; padding-left: 20px; }
+.help-list li { margin-bottom: 6px; }
+.faq { border-top: 1px solid var(--border); padding: 10px 0; }
+.faq summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+.faq div { font-size: .88rem; color: var(--muted); padding-top: 6px; }
+
 /* ---------- Scope boxes ---------- */
 .scope-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--surface); }
 .scope-box h3 { display: flex; gap: 8px; align-items: center; }
@@ -239,6 +253,7 @@ tr.sub td { color: var(--muted); }
   .brand-sub, .save-status { display: none; }
   .topbar { padding: 10px 16px; }
   .topbar-actions .btn { padding: 6px 9px; font-size: .78rem; }
+  .topbar-actions [data-step="ayuda"] { display: none; }
   .bar-row { grid-template-columns: 1fr 90px; }
   .bar-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   .report { padding: 20px 16px; }
