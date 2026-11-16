@@ -350,3 +350,22 @@ div.validation.ok { color: var(--accent-strong); font-size: .84rem; margin-top: 
   .auth-card { margin: 16px auto; padding: 20px; }
   .group-row .step-num { display: none; }
 }
+
+/* Ayuda paso a paso */
+.help-index { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; position: sticky; top: 64px; z-index: 5; background: var(--bg); padding: 6px 0; }
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.flow > div { background: var(--accent-soft); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px; position: relative; }
+.flow > div strong { color: var(--accent-strong); }
+.flow > div span { font-size: .8rem; color: var(--muted); }
+.help-tip { margin-top: 6px; font-size: .85rem; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.kbd { display: inline-block; font-size: .8rem; font-weight: 600; padding: 1px 8px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: var(--surface); white-space: nowrap; }
+.glossary { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; margin: 0; font-size: .9rem; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0; color: var(--muted); }
+[id^="h-"] { scroll-margin-top: 120px; }
+@media (max-width: 860px) {
+  .flow { grid-template-columns: 1fr 1fr; }
+  .glossary { grid-template-columns: 1fr; gap: 2px; }
+  .glossary dd { margin-bottom: 8px; }
+  .help-index { top: 56px; }
+}

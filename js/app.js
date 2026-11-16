@@ -448,7 +448,7 @@
     const list = (state.clients || []).filter((c) => !ui.clientFilter || (c.name + ' ' + (c.cuit || '')).toLowerCase().includes(ui.clientFilter.toLowerCase()));
     const noKey = state.keyStatus && !state.keyStatus.has_key;
     return pageHead('Panel', 'Clientes', 'Cada cliente tiene su biblioteca de factores, sus huellas (organizacional, de evento y de producto) y su historial de cambios.',
-      '<button class="btn" data-action="new-client">+ Nuevo cliente</button>') + `
+      '<div class="row"><a class="btn ghost" href="#/ayuda">¿Primera vez? Ver instrucciones</a><button class="btn" data-action="new-client">+ Nuevo cliente</button></div>') + `
       ${noKey ? '<div class="callout warn"><p>Todavía no cargaste tu API key de Climatiq. Podés trabajar con la biblioteca de factores propios; para usar los factores de Climatiq, configurala en <a href="#/cuenta">Mi cuenta</a>.</p></div>' : ''}
       <div class="row" style="margin-bottom:14px"><input type="search" placeholder="Buscar por nombre o CUIT…" data-bind="ui.clientFilter" data-live="clients" style="max-width:340px" value="${esc(ui.clientFilter || '')}"></div>
       ${!list.length ? `<div class="card empty">${state.clients && state.clients.length ? 'Sin resultados.' : 'Todavía no tenés clientes. Creá el primero para empezar.'}</div>` : ''}
@@ -1452,6 +1452,7 @@
   // ============================================================
   const findSource = (id) => project.sources.find((x) => x.id === id);
   const actions = {
+    'scroll-to'(d) { const el = document.getElementById(d.target); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     'toggle-nav'() { ui.navOpen = !ui.navOpen; document.getElementById('steps-nav').classList.toggle('open', ui.navOpen); },
     refresh() { render(); },
     'close-modal'() { ui.modal = null; ui.search = null; renderModal(); },
@@ -1748,29 +1749,141 @@
   // Ayuda
   // ============================================================
   function renderHelp() {
-    const step = (n, title, body) => `<div class="help-step"><div class="help-num">${n}</div><div><h3>${title}</h3>${body}</div></div>`;
+    const step = (n, title, items, tip) => `<div class="help-step"><div class="help-num">${n}</div><div><h3>${title}</h3><ol class="help-list">${items.map((i) => `<li>${i}</li>`).join('')}</ol>${tip ? `<div class="help-tip">💡 ${tip}</div>` : ''}</div></div>`;
     const faq = (q, a) => `<details class="faq"><summary>${q}</summary><div>${a}</div></details>`;
-    return pageHead('Ayuda', 'Instrucciones de uso', 'Cómo trabajar con clientes, bibliotecas de factores y los tres tipos de huella.') + `
-      <div class="card"><h2>Flujo de trabajo</h2>
-        ${step(1, 'Configurá tu cuenta', '<p>En <strong>Mi cuenta</strong> cargá tu API key de Climatiq (gratuita en climatiq.io). Se guarda en la base de datos y el navegador nunca la vuelve a leer. Sin key podés trabajar solo con factores propios.</p>')}
-        ${step(2, 'Creá el cliente', '<p>Razón social, CUIT (se valida el dígito verificador), provincia y contacto.</p>')}
-        ${step(3, 'Cargá su biblioteca de factores', '<p>En la pestaña <strong>Biblioteca de factores</strong>, cargá los factores propios del cliente (kgCO₂e por unidad) con su fuente. Podés copiar la tabla desde Excel con las columnas <em>Código · Actividad · Factor · Unidad del factor · Origen</em> y pegarla con <strong>Pegar desde Excel</strong>. Cada cambio de valor queda en el historial.</p>')}
-        ${step(4, 'Creá la huella y elegí el tipo', '<p><strong>Organizacional</strong> (GHG Protocol / ISO 14064-1), <strong>de evento</strong> (GHG + ISO 20121) o <strong>de producto</strong> (ISO 14067). Cada tipo tiene su propio asistente. Las tres huellas nunca se suman entre sí.</p>')}
-        ${step(5, 'Completá los límites', '<p>Organización: consolidación, instalaciones, alcances y año base. Evento: asistentes, límites temporal y espacial, componentes. Producto: unidad declarada, lote, límite del sistema, etapas y regla de asignación.</p>')}
-        ${step(6, 'Cargá las fuentes', '<p>Para cada fuente: <strong>¿se incluye?</strong> (si no, justificá), dato de actividad, <strong>factor de la biblioteca o de Climatiq</strong>, evidencia y responsable del dato. La app valida al instante las unidades (convierte L↔m³, kg↔t, kWh↔GJ y rechaza, por ejemplo, vehículo·km contra pasajero·km), los datos faltantes o negativos y los posibles dobles conteos.</p>')}
-        ${step(7, 'Calculá y revisá', '<p>Los factores propios se calculan al instante; los de Climatiq, con <strong>Calcular</strong>. Mientras falten fuentes, el total se marca como <strong>PARCIAL</strong> con su % de completitud.</p>')}
-        ${step(8, 'Emití el informe', '<p>Con completitud del 100% y sin errores se habilita <strong>Emitir informe</strong>: se guarda una versión inmutable (datos, factores y resultados) y se descarga el Word. Antes de eso, el Word sale marcado como BORRADOR.</p>')}
+    const btn = (t) => `<span class="kbd">${t}</span>`;
+    const sections = [['h-primera', 'Primera vez'], ['h-cliente', 'Cada cliente'], ['h-huella', 'Cada huella'], ['h-fuentes', 'Cargar fuentes'], ['h-informe', 'Informe'], ['h-etiquetas', 'Etiquetas'], ['h-glosario', 'Glosario'], ['h-problemas', 'Problemas']];
+    return pageHead('Ayuda', 'Instrucciones de uso', 'Guía paso a paso. Seguí las secciones en orden la primera vez; después usala como consulta.') + `
+      <div class="help-index">${sections.map(([id, t]) => `<button class="chip" data-action="scroll-to" data-target="${id}">${t}</button>`).join('')}</div>
+
+      <div class="card">
+        <h2>Cómo funciona, en 1 minuto</h2>
+        <div class="flow">
+          <div><strong>1. Cliente</strong><span>La empresa para la que trabajás.</span></div>
+          <div><strong>2. Biblioteca</strong><span>Los factores de emisión del cliente.</span></div>
+          <div><strong>3. Huella</strong><span>Organización, evento o producto.</span></div>
+          <div><strong>4. Fuentes</strong><span>Cada consumo: gas, luz, viajes…</span></div>
+          <div><strong>5. Informe</strong><span>Word listo para entregar.</span></div>
+        </div>
+        <p class="muted small" style="margin-top:12px">La cuenta fundamental es siempre la misma: <strong>dato de actividad × factor de emisión = emisiones</strong>. Por ejemplo, 500 kWh × 0,40 kgCO₂e/kWh = 200 kgCO₂e.</p>
       </div>
-      <div class="grid two">
-        <div class="card"><h2>¿Por qué "parcial"?</h2><p class="small">El GHG Protocol, ISO 14064-1 e ISO 14067 aplican el principio de <strong>integridad</strong> al estudio que se informa: todas las fuentes dentro del límite deben estar cuantificadas o su exclusión justificada. Ver un parcial mientras trabajás es útil para priorizar datos; comunicarlo como resultado final, no.</p></div>
-        <div class="card"><h2>Trazabilidad</h2><p class="small">La base de datos registra automáticamente: altas, cambios y bajas de clientes y factores (con valor anterior y nuevo), creación y estado de las huellas, cálculos, descargas y emisiones. Lo ves en la pestaña <strong>Historial</strong> de cada cliente. Las versiones emitidas no se pueden modificar.</p></div>
+
+      <div class="card" id="h-primera"><h2>A. Primera vez (se hace una sola vez)</h2>
+        ${step(1, 'Creá tu cuenta', [
+          `Tocá ${btn('Crear cuenta')} en la pantalla de ingreso.`,
+          'Completá nombre, empresa, email y una contraseña de 8 caracteres o más.',
+          'Revisá tu correo y abrí el enlace de confirmación.',
+          'Volvé al sitio e ingresá con tu email y contraseña.',
+        ], 'Si el correo no llega, revisá la carpeta de spam.')}
+        ${step(2, 'Cargá tu API key de Climatiq', [
+          'Entrá a <a href="https://www.climatiq.io" target="_blank" rel="noopener">climatiq.io</a>, creá una cuenta gratis y copiá tu API key.',
+          `En la app, tocá ${btn('Mi cuenta')} (arriba a la derecha).`,
+          `Pegá la key y tocá ${btn('Guardar key')}.`,
+          `Tocá ${btn('Probar conexión')}: tiene que aparecer “✓ Conexión correcta”.`,
+        ], 'Es opcional: sin key podés trabajar igual, solo con los factores propios de cada cliente.')}
       </div>
-      <div class="card"><h2>Problemas frecuentes</h2>
-        ${faq('"No cargaste tu API key de Climatiq"', 'Andá a Mi cuenta y guardala. Después usá "Probar conexión".')}
-        ${faq('Unidades incoherentes', 'La unidad del dato no es de la misma magnitud que la del factor (p. ej. dato en vehículo·km y factor por t·km). Corregí la unidad o elegí otro factor.')}
-        ${faq('Climatiq no tiene factor de red para AR', 'Cargá en la biblioteca el factor de emisión de la red argentina publicado por la Secretaría de Energía y usalo con el método "Biblioteca del cliente".')}
-        ${faq('No se habilita "Emitir informe"', 'El paso Informe lista lo que falta: fuentes sin decidir o sin calcular, errores de validación o límites sin evaluar.')}
-        ${faq('Edité una huella emitida', 'Vuelve a estado borrador. La versión emitida sigue guardada sin cambios y se puede descargar desde el paso Informe.')}
+
+      <div class="card" id="h-cliente"><h2>B. Para cada cliente</h2>
+        ${step(1, 'Creá el cliente', [
+          `En ${btn('Clientes')}, tocá ${btn('+ Nuevo cliente')}.`,
+          'Completá razón social, CUIT, sector y provincia.',
+          `Tocá ${btn('Crear cliente')}.`,
+        ], 'Si el CUIT tiene un error de tipeo, la app te avisa.')}
+        ${step(2, 'Cargá su biblioteca de factores desde Excel', [
+          'En tu Excel, seleccioná las columnas <strong>Código, Actividad, Factor, Unidad del factor y Origen</strong> (podés incluir la fila de títulos).',
+          'Copiá con <strong>Ctrl + C</strong>.',
+          `En la app, abrí el cliente → pestaña ${btn('Biblioteca de factores')} → ${btn('Pegar desde Excel')}.`,
+          `Pegá con <strong>Ctrl + V</strong> y tocá ${btn('Revisar')}.`,
+          `Revisá la tabla: cada fila tiene que decir <span class="badge ok">OK</span>. Después tocá ${btn('Importar')}.`,
+        ], 'También podés cargar factores de a uno con “+ Nuevo factor”. Anotá siempre de dónde sale cada factor (columna Fuente): el informe lo muestra.')}
+      </div>
+
+      <div class="card" id="h-huella"><h2>C. Para cada huella</h2>
+        ${step(1, 'Creá la huella', [
+          `Dentro del cliente, pestaña ${btn('Huellas')} → ${btn('+ Nueva huella')}.`,
+          'Elegí el tipo: <strong>Organizacional</strong> (toda la empresa en un año), <strong>Evento</strong> (una convención, una feria…) o <strong>Producto</strong> (por ejemplo, una caja).',
+          `Escribí un nombre y el año, y tocá ${btn('Crear')}.`,
+        ], 'Las tres huellas son estudios distintos: nunca se suman entre sí.')}
+        ${step(2, 'Seguí los pasos del menú de la izquierda, en orden', [
+          'Cada paso tiene un número. Cuando está completo, aparece un ✓ verde.',
+          '<strong>Organizacional:</strong> objetivo → instalaciones → qué alcances incluís → año → fuentes → resultados → calidad → informe.',
+          '<strong>Evento:</strong> datos y asistentes → componentes (montaje, visitantes, catering…) → fuentes → resultados → escenarios de reducción → gestión ISO 20121 → calidad → informe.',
+          '<strong>Producto:</strong> producto y unidad (por ejemplo, 1 caja) → etapas → fuentes → resultados → sensibilidad → calidad → informe.',
+        ], 'Todo se guarda solo mientras escribís. Arriba vas a ver “Guardado”.')}
+      </div>
+
+      <div class="card" id="h-fuentes"><h2>D. Cargar una fuente (el paso más importante)</h2>
+        <p class="muted small">Una fuente es cada consumo que genera emisiones: el gas de la caldera, el diésel de la flota, la electricidad, el cartón comprado, etc.</p>
+        ${step(1, 'Agregala', [
+          'Elegí la instalación, el componente o la etapa (y, en la huella organizacional, la categoría).',
+          `Tocá ${btn('+ Agregar fuente')}. Se abre la ficha de la fuente.`,
+        ])}
+        ${step(2, 'Completá la ficha', [
+          '<strong>Descripción:</strong> por ejemplo, “Gas de caldera”.',
+          '<strong>¿Se incluye?</strong> Sí. Si elegís No, escribí por qué.',
+          '<strong>Factor:</strong> elegí <em>Biblioteca del cliente</em> y seleccioná el factor (por ejemplo, NG — Gas natural). O elegí <em>Climatiq</em> y tocá “Buscar factor”.',
+          '<strong>Dato de actividad:</strong> la cantidad, por ejemplo 11.500.',
+          '<strong>Unidad:</strong> la del dato, por ejemplo m³. Si no coincide con la del factor, la app la convierte o te avisa.',
+          '<strong>Evidencia y responsable:</strong> qué documento respalda el dato y quién lo dio.',
+        ], 'Si usás la biblioteca, el resultado aparece al instante en verde: “23.000,00 kgCO₂e”. Con Climatiq, tocá “Calcular emisiones”.')}
+        ${step(3, 'Revisá los avisos', [
+          '<span class="badge err">Inválida</span> en rojo: hay que corregir algo; abrí la fuente y leé el mensaje.',
+          '<span class="badge warn">!</span> en amarillo: es una advertencia (por ejemplo, falta la evidencia). Calcula igual, pero conviene completarla.',
+          'Arriba ves la <strong>completitud</strong>: el % de fuentes ya calculadas.',
+        ])}
+      </div>
+
+      <div class="card" id="h-informe"><h2>E. Resultados e informe</h2>
+        ${step(1, 'Mirá los resultados', [
+          `Paso ${btn('Resultados')}: totales, gráficos y detalle por fuente.`,
+          'Si dice <span class="badge warn">PARCIAL</span>, todavía faltan fuentes. Sirve para trabajar, pero no para comunicar.',
+        ])}
+        ${step(2, 'Revisá la calidad', [
+          `Paso ${btn('Calidad y validación')}: resolvé lo que diga “Pendiente”.`,
+          'Tildá los principios al final de la página.',
+        ])}
+        ${step(3, 'Descargá o emití el informe', [
+          `${btn('Descargar Word')}: lo podés bajar en cualquier momento. Si falta algo, sale marcado como BORRADOR.`,
+          `${btn('Emitir informe')}: se habilita con el 100% y sin errores. Guarda una versión final que no se puede modificar (v1, v2…) y descarga el Word.`,
+        ], 'Si cambiás algo después de emitir, la huella vuelve a borrador, pero la versión emitida queda guardada y la podés volver a descargar.')}
+      </div>
+
+      <div class="card" id="h-etiquetas"><h2>Qué significa cada etiqueta</h2>
+        <table><tbody>
+          <tr><td><span class="badge ok">23.000,00 kgCO₂e</span></td><td>Fuente calculada y correcta.</td></tr>
+          <tr><td><span class="badge">Listo para calcular</span></td><td>Fuente de Climatiq completa: falta tocar “Calcular emisiones”.</td></tr>
+          <tr><td><span class="badge err">Inválida</span></td><td>Falta un dato o las unidades no coinciden. No suma al total.</td></tr>
+          <tr><td><span class="badge warn">Sin decidir</span></td><td>Falta indicar si la fuente se incluye.</td></tr>
+          <tr><td><span class="badge">Excluida</span></td><td>No se incluye. Tiene que tener una justificación.</td></tr>
+          <tr><td><span class="badge warn">PARCIAL</span></td><td>El total todavía no incluye todas las fuentes.</td></tr>
+          <tr><td><span class="badge">Borrador</span> / <span class="badge ok">Emitida</span></td><td>Estado de la huella: en preparación, o con versión final entregada.</td></tr>
+        </tbody></table>
+      </div>
+
+      <div class="card" id="h-glosario"><h2>Glosario simple</h2>
+        <dl class="glossary">
+          <dt>Dato de actividad</dt><dd>Cuánto se consumió: litros, kWh, kg, km…</dd>
+          <dt>Factor de emisión</dt><dd>Cuánto CO₂e genera cada unidad. Por ejemplo, 2 kgCO₂e por m³ de gas.</dd>
+          <dt>CO₂e (CO₂ equivalente)</dt><dd>Unidad común que suma todos los gases (CO₂, metano, etc.) según su efecto sobre el clima.</dd>
+          <dt>Alcance 1</dt><dd>Emisiones directas: combustibles propios, flota, refrigerantes.</dd>
+          <dt>Alcance 2</dt><dd>La electricidad (o el vapor) que se compra.</dd>
+          <dt>Alcance 3</dt><dd>El resto de la cadena: compras, fletes contratados, residuos, viajes…</dd>
+          <dt>Biblioteca del cliente</dt><dd>Los factores propios de ese cliente, por ejemplo los que te pasan en el curso o los oficiales del país.</dd>
+          <dt>Climatiq</dt><dd>Base de datos internacional de factores oficiales (DEFRA, EPA, IPCC…).</dd>
+          <dt>Completitud</dt><dd>El % de fuentes incluidas que ya están calculadas y sin errores.</dd>
+          <dt>Emitir</dt><dd>Cerrar una versión final del informe. Queda guardada y no se puede modificar.</dd>
+        </dl>
+      </div>
+
+      <div class="card" id="h-problemas"><h2>Problemas frecuentes</h2>
+        ${faq('No me llega el email de confirmación', 'Revisá spam. Supabase gratis envía pocos emails por hora: esperá unos minutos y volvé a intentar.')}
+        ${faq('“No cargaste tu API key de Climatiq”', 'Andá a Mi cuenta, pegá la key, tocá Guardar key y después Probar conexión.')}
+        ${faq('Una fuente dice “Unidades incoherentes”', 'La unidad del dato no se puede convertir a la del factor; por ejemplo, el dato está en vehículo·km y el factor es por t·km. Cambiá la unidad o elegí otro factor.')}
+        ${faq('No encuentro un factor en Climatiq', 'Buscá en inglés (natural gas, diesel, electricity). Si no aparece para Argentina, borrá la región y volvé a buscar, o cargá el factor en la biblioteca del cliente.')}
+        ${faq('No aparece una categoría al agregar una fuente', 'En la huella organizacional, solo aparecen las categorías marcadas como “Incluida” en el paso Límites de informe.')}
+        ${faq('No se habilita “Emitir informe”', 'En el paso Informe aparece la lista de lo que falta. Resolvelo y el botón se habilita.')}
+        ${faq('Pegué el Excel y una fila dice “Unidad no reconocida”', 'Revisá cómo está escrita la unidad en el Excel (por ejemplo, kgCO₂e/m³, kgCO₂e/t·km). Corregila en el Excel y volvé a pegar, o cargá ese factor a mano.')}
+        ${faq('¿Dónde veo quién cambió qué?', 'En el cliente, pestaña Historial: queda registrado cada factor creado o modificado, cada cálculo y cada informe emitido.')}
       </div>`;
   }
 
