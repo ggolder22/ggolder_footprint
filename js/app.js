@@ -850,7 +850,9 @@
         <div class="cat-title">${esc(label)} <span class="badge">${S.ISO_CATEGORIES[cat.iso].split(' · ')[0]}</span></div>
         <div class="cat-desc">${esc(cat.desc)}</div>
         ${cat.scope === 3 ? `<div class="criteria">${S.RELEVANCE_CRITERIA.map((r) => check(r.label, `${base}.criteria.${r.id}`, { title: r.help })).join('')}</div>` : ''}
-        ${st.status === 'excluded' ? `<div style="margin-top:8px">${field('Justificación de la exclusión', `${base}.justification`, { placeholder: cat.scope === 3 ? 'Ej. No significativa (<1% estimado), sin influencia, sin datos…' : 'Ej. No existen fuentes de este tipo.' })}</div>` : ''}
+        ${st.status === 'excluded' ? `<div style="margin-top:8px">${field('Justificación de la exclusión', `${base}.justification`, { placeholder: cat.scope === 3 ? 'Ej. No aplica: la empresa no tiene franquicias. / No significativa (<1% estimado).' : 'Ej. No existen fuentes de este tipo.' })}</div>
+          ${cat.scope === 3 ? `<div style="margin-top:8px">${field('Plan de mejora de la información', `${base}.improvement`, { placeholder: 'Ej. Relevar con encuesta los desplazamientos del personal para el próximo inventario.' })}</div>` : ''}
+          ${C.lacksDataOnly(st.justification) && !String(st.improvement || '').trim() ? `<div class="callout warn" style="margin-top:8px"><p>${esc(C.LACK_DATA_MSG)}</p></div>` : ''}` : ''}
       </div>
       <div style="min-width:160px">${field('Estado', `${base}.status`, { type: 'select', rerender: true, options: cat.scope === 3 ? [['pending', 'Por evaluar'], ['included', 'Incluida'], ['excluded', 'Excluida']] : [['included', 'Aplica / incluida'], ['excluded', 'No aplica']] })}</div></div>`;
   }
@@ -956,6 +958,11 @@
           ${field('¿Se incluye?', `${P}.include`, { type: 'select', rerender: true, options: [['yes', 'Sí'], ['no', 'No (excluida)'], ['pending', 'Pendiente de decidir']] })}
           <div style="grid-column: span 2">${field(s.include === 'no' ? 'Justificación de la exclusión (obligatoria)' : 'Límite y justificación', `${P}.justification`, { placeholder: s.include === 'no' ? 'Ej. Fuera del límite temporal del evento.' : 'Por qué está dentro del límite' })}</div>
         </div>
+        ${s.include === 'no' ? `<div style="margin-top:12px">${field('Plan de mejora de la información', `${P}.improvement`, { placeholder: 'Ej. Pedir al proveedor los remitos 2026 para incluir la fuente el próximo período.', help: 'Recomendado si la exclusión se debe a falta de datos.' })}</div>` : ''}
+        ${isOrg && cat && s.include !== 'no' ? `<div class="grid" style="margin-top:12px">
+          ${field('Categoría ISO 14064-1', `${P}.isoOverride`, { type: 'select', rerender: true, options: [['', `Sugerida: ${S.ISO_CATEGORIES[cat.iso]}`], ...Object.entries(S.ISO_CATEGORIES)], help: 'El mapa GHG Protocol → ISO es orientativo. Cambialo si la naturaleza de la actividad lo requiere.' })}
+          ${s.isoOverride && Number(s.isoOverride) !== cat.iso ? `<div style="grid-column: span 2">${field('Justificación del cambio de categoría ISO (obligatoria)', `${P}.isoJustification`, { placeholder: 'Ej. Retiro y transporte de recortes al reciclador: se informa como transporte indirecto (ISO 3).' })}</div>` : ''}
+        </div>` : ''}
         ${s.include !== 'no' ? `
         <div style="margin:16px 0 10px" class="row"><span class="small strong">Factor de emisión</span>
           <div class="method-tabs">${methods.map(([m, l]) => `<button class="${s.method === m ? 'on' : ''}" data-action="set-method" data-id="${s.id}" data-method="${m}">${l}</button>`).join('')}</div></div>
@@ -991,7 +998,7 @@
       <div class="source-head" data-action="toggle-source" data-id="${s.id}">
         <span aria-hidden="true">${open ? '▾' : '▸'}</span>
         <span class="title">${esc(s.description || '(sin descripción)')}</span>
-        ${cat ? `<span class="badge s${cat.scope}">${cat.scope === 3 ? '3.' + cat.cat : 'A' + cat.scope} ${esc(cat.name)}</span>` : ''}
+        ${cat ? `<span class="badge s${cat.scope}">${cat.scope === 3 ? '3.' + cat.cat : 'A' + cat.scope} ${esc(cat.name)}</span><span class="badge" title="Categoría ISO 14064-1">ISO ${C.isoOf(s)}${s.isoOverride && Number(s.isoOverride) !== cat.iso ? '*' : ''}</span>` : ''}
         <span class="badge">${s.method === 'library' ? 'Biblioteca' : s.method === 'climatiq' ? 'Climatiq' : 'Red eléctrica'}</span>
         <span class="status-slot">${sourceStatus(s, t)}</span>
       </div>${body}</div>`;
@@ -1039,7 +1046,7 @@
       <div class="grid">
         ${field('Consumo total', `${P}.elec.energy`, { type: 'number', min: 0, step: 'any' })}
         ${field('Unidad', `${P}.elec.unit`, { type: 'select', options: S.UNIT_TYPES.Energy[0].units.map((u) => [u, u]) })}
-        ${field('Certificados renovables', `${P}.elec.recs`, { type: 'number', min: 0, step: 'any', help: 'Misma unidad. Solo afecta el método de mercado.' })}
+        ${field('Certificados renovables', `${P}.elec.recs`, { type: 'number', min: 0, step: 'any', help: 'Misma unidad. Solo afecta el método de mercado y deben cumplir los criterios de calidad del GHG Protocol Scope 2.' })}
         ${field('Renovable con conexión directa', `${P}.elec.direct`, { type: 'number', min: 0, step: 'any' })}
         ${field('Año del factor', `${P}.elec.year`, { type: 'number', step: 1, placeholder: 'Último disponible' })}
       </div>`;
@@ -1254,6 +1261,7 @@
       ['Objetivo y responsable documentados', !!(p.purpose.objective && p.purpose.responsible)],
       ['Sin fuentes pendientes de decisión', t.counts.pendingDecision === 0],
       ['Exclusiones justificadas', p.sources.filter((s) => s.include === 'no').every((s) => String(s.justification || '').trim())],
+      ['Exclusiones por falta de datos con plan de mejora', [...p.sources.filter((s) => s.include === 'no'), ...(p.type === 'organizacion' ? Object.values(p.boundaries.categories).filter((c) => c.status === 'excluded') : [])].every((x) => !C.lacksDataOnly(x.justification) || String(x.improvement || '').trim())],
       ['Sin errores de validación (unidades, datos, factores)', t.counts.withErrors === 0],
       ['Todas las fuentes incluidas calculadas (completitud 100%)', t.completeness === 1 && p.sources.length > 0],
       ['Todas las fuentes con evidencia y responsable', p.sources.filter((s) => s.include === 'yes').every((s) => String(s.evidence || '').trim() && String(s.custodian || '').trim())],
@@ -1368,7 +1376,7 @@
 
   function exportCsv() {
     const t = C.compute(project, state.lib);
-    const head = [S.FOOTPRINT_TYPES[project.type].groupName, 'Fuente', ...(project.type === 'organizacion' ? ['Alcance', 'Categoria'] : ['Tipo']), 'Incluida', 'Metodo', 'Factor', 'Valor factor', 'Unidad factor', 'Fuente factor', 'Dato actividad', 'Unidad dato', 'kgCO2e', 'Incertidumbre %', 'Evidencia', 'Responsable', 'Justificacion'];
+    const head = [S.FOOTPRINT_TYPES[project.type].groupName, 'Fuente', ...(project.type === 'organizacion' ? ['Alcance', 'Categoria', 'Categoria ISO'] : ['Tipo']), 'Incluida', 'Metodo', 'Factor', 'Valor factor', 'Unidad factor', 'Fuente factor', 'Dato actividad', 'Unidad dato', 'kgCO2e', 'Incertidumbre %', 'Evidencia', 'Responsable', 'Justificacion'];
     const rows = project.sources.map((s) => {
       const f = C.libFactor(state.lib, s.libraryFactorId);
       const r = t.rows.find((x) => x.s.id === s.id && !x.derived);
@@ -1377,7 +1385,7 @@
       if (s.method === 'library' && f) { fname = f.code + ' ' + f.name; fval = f.value; funit = 'kgCO2e/' + Un.label(f.activity_unit); fsrc = f.source; qty = s.quantity; unit = Un.label(s.unit); }
       if (s.method === 'climatiq' && s.factor) { fname = s.factor.name; fsrc = s.factor.source; const sp = S.UNIT_TYPES[s.factor.unit_type] || []; qty = sp.map((p) => s.params[p.key]).join(' x '); unit = sp.map((p) => s.params[p.key + '_unit'] || p.key).join(' x '); }
       if (s.method === 'electricity') { fname = 'Red eléctrica'; fsrc = 'Climatiq Energy API'; qty = s.elec.energy; unit = s.elec.unit; }
-      return [(project.groups.find((g) => g.id === s.groupId) || {}).name, s.description, ...(project.type === 'organizacion' ? [cat ? cat.scope : '', cat ? cat.name : ''] : [s.activityType]),
+      return [(project.groups.find((g) => g.id === s.groupId) || {}).name, s.description, ...(project.type === 'organizacion' ? [cat ? cat.scope : '', cat ? cat.name : '', cat ? C.isoOf(s) + (s.isoOverride && Number(s.isoOverride) !== cat.iso ? ' (manual: ' + (s.isoJustification || '') + ')' : '') : ''] : [s.activityType]),
         { yes: 'Si', no: 'No', pending: 'Pendiente' }[s.include], s.method, fname, fval, funit, fsrc, qty, unit, r ? r.kg.toFixed(4) : '', r ? r.u.toFixed(1) : '', s.evidence, s.custodian, s.justification];
     });
     const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
@@ -1862,12 +1870,17 @@
 
       <div class="card" id="h-glosario"><h2>Glosario simple</h2>
         <dl class="glossary">
+          <dt>GEI</dt><dd>Gas de efecto invernadero: CO₂, metano (CH₄), óxido nitroso (N₂O), refrigerantes, etc.</dd>
           <dt>Dato de actividad</dt><dd>Cuánto se consumió: litros, kWh, kg, km…</dd>
           <dt>Factor de emisión</dt><dd>Cuánto CO₂e genera cada unidad. Por ejemplo, 2 kgCO₂e por m³ de gas.</dd>
           <dt>CO₂e (CO₂ equivalente)</dt><dd>Unidad común que suma todos los gases (CO₂, metano, etc.) según su efecto sobre el clima.</dd>
           <dt>Alcance 1</dt><dd>Emisiones directas: combustibles propios, flota, refrigerantes.</dd>
           <dt>Alcance 2</dt><dd>La electricidad (o el vapor) que se compra.</dd>
           <dt>Alcance 3</dt><dd>El resto de la cadena: compras, fletes contratados, residuos, viajes…</dd>
+          <dt>Aguas arriba / aguas abajo</dt><dd>Etapas previas o necesarias para operar (compras, fletes de insumos) / etapas posteriores ligadas a lo que se vende (distribución, uso, fin de vida).</dd>
+          <dt>Categorías ISO 14064-1</dt><dd>Otra forma de ordenar las mismas emisiones: 1 directas, 2 energía importada, 3 transporte, 4 productos que usa la organización, 5 uso de sus productos, 6 otras. La “categoría 3 ISO” (transporte) no es la “categoría 3 del Alcance 3” (combustibles y energía).</dd>
+          <dt>Límite organizacional</dt><dd>Qué operaciones e instalaciones entran en el inventario, según el enfoque de control o de participación.</dd>
+          <dt>Trazabilidad</dt><dd>Poder reconstruir cada dato: de dónde salió, qué factor se usó y qué decisiones se tomaron.</dd>
           <dt>Biblioteca del cliente</dt><dd>Los factores propios de ese cliente, por ejemplo los que te pasan en el curso o los oficiales del país.</dd>
           <dt>Climatiq</dt><dd>Base de datos internacional de factores oficiales (DEFRA, EPA, IPCC…).</dd>
           <dt>Completitud</dt><dd>El % de fuentes incluidas que ya están calculadas y sin errores.</dd>

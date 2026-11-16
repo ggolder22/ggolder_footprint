@@ -21,6 +21,17 @@
     return { kg: q * num(f.value), qtyConverted: q, factor: f };
   }
 
+  // Categoría ISO 14064-1 de una fuente: la elegida manualmente o la sugerida por el mapa de equivalencias
+  function isoOf(s) {
+    const cat = S.byId[s.catId];
+    return s.isoOverride ? Number(s.isoOverride) : cat ? cat.iso : null;
+  }
+
+  // "La dificultad para conseguir un dato no justifica, por sí sola, esconder una fuente importante"
+  const LACK_DATA_RE = /(sin|falta(n)? de|no (hay|hubo|tenemos|contamos con|se cuenta con)|no disponible|no se dispone de|dif[ií]cil (de )?(obtener|conseguir))\s*(los |el |la )?(datos?|informaci[oó]n|registros?)/i;
+  const lacksDataOnly = (txt) => LACK_DATA_RE.test(String(txt || ''));
+  const LACK_DATA_MSG = 'La falta de datos no justifica, por sí sola, excluir una fuente significativa: estimala o documentá un plan de mejora para obtener la información.';
+
   // ------------------------------------------------------------
   // Validación de una fuente → { level: 'ok'|'warn'|'error', issues: [{level,msg}] }
   // ------------------------------------------------------------
@@ -33,6 +44,7 @@
     if (s.include === 'pending') add('error', 'Falta decidir si la fuente se incluye.');
     if (s.include === 'no') {
       if (!String(s.justification || '').trim()) add('error', 'Justificá por qué se excluye.');
+      else if (lacksDataOnly(s.justification) && !String(s.improvement || '').trim()) add('warn', LACK_DATA_MSG);
       return finish();
     }
     if (!s.groupId || !project.groups.some((g) => g.id === s.groupId)) add('error', `Asigná ${S.FOOTPRINT_TYPES[type].groupName.toLowerCase()}.`);
@@ -40,6 +52,10 @@
       const st = project.boundaries.categories[s.catId];
       if (!st) add('error', 'Elegí la categoría de emisión.');
       else if (st.status !== 'included') add('warn', 'La categoría está excluida en los límites de informe: la fuente no suma al total.');
+      if (s.isoOverride && S.byId[s.catId] && Number(s.isoOverride) !== S.byId[s.catId].iso) {
+        if (!String(s.isoJustification || '').trim()) add('error', 'Justificá por qué cambiaste la categoría ISO 14064-1 sugerida.');
+        else add('info', `Categoría ISO ${s.isoOverride} elegida manualmente (la sugerida era ${S.byId[s.catId].iso}).`);
+      }
     }
 
     if (s.method === 'library') {
@@ -175,7 +191,7 @@
         if (cat.scope === 1) t.s1 += val;
         else if (cat.scope === 2) { t.s2loc += val; t.s2mkt += val; }
         else t.s3 += val;
-        add(t.byCat, s.catId, val); add(t.byIso, cat.iso, val);
+        add(t.byCat, s.catId, val); add(t.byIso, isoOf(s), val);
       }
       add(t.byGroup, s.groupId, val);
       if (s.result.gases) ['co2', 'ch4', 'n2o', 'other'].forEach((g) => { if (!isBlank(s.result.gases[g])) t.gases[g] += num(s.result.gases[g]) * k; });
@@ -253,5 +269,5 @@
     return { sourceKg: r ? r.kg : 0, delta, total: base.total + delta, deltaPct: base.total > 0 ? (delta / base.total) * 100 : 0, found: !!r };
   }
 
-  root.Calc = { validateSource, compute, libraryEmission, libFactor, isStale, groupShare, scenarioResult, sensitivityResult, uncertaintyOf };
+  root.Calc = { isoOf, lacksDataOnly, LACK_DATA_MSG, validateSource, compute, libraryEmission, libFactor, isStale, groupShare, scenarioResult, sensitivityResult, uncertaintyOf };
 })(typeof window !== 'undefined' ? window : globalThis);

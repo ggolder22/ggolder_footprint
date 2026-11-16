@@ -46,7 +46,7 @@ window.Report = (function () {
     const { project: p, t } = ctx;
     b.table(['Fuente', S.FOOTPRINT_TYPES[p.type].groupName, ...(opt.cat ? ['Categoría'] : []), 'kgCO₂e', '±%'],
       t.rows.map((r) => [r.s.description + (r.derived ? ' (aguas arriba)' : ''), groupName(p, r.s.groupId),
-        ...(opt.cat ? [r.cat ? (r.scope === 3 ? '3.' + r.cat.cat : 'A' + r.scope) + ' ' + r.cat.name : '—'] : []), fmtK(r.kg), fmtN(r.u, 0)]),
+        ...(opt.cat ? [r.cat ? `${(r.scope === 3 ? '3.' + r.cat.cat : 'A' + r.scope) + ' ' + r.cat.name}\nISO ${r.derived ? r.cat.iso : window.Calc.isoOf(r.s)}${!r.derived && r.s.isoOverride && Number(r.s.isoOverride) !== r.cat.iso ? '* — ' + (r.s.isoJustification || '') : ''}` : '—'] : []), fmtK(r.kg), fmtN(r.u, 0)]),
       { num: opt.cat ? [3, 4] : [2, 3], widths: opt.cat ? [3, 2, 3, 1.4, 0.6] : [4, 3, 2, 1], empty: 'Sin fuentes calculadas.' });
   }
 
@@ -64,7 +64,7 @@ window.Report = (function () {
 
   function exclusions(b, ctx) {
     const ex = ctx.project.sources.filter((s) => s.include === 'no');
-    if (ex.length) b.table(['Fuente excluida', 'Justificación'], ex.map((s) => [s.description, d(s.justification)]), { widths: [4, 6] });
+    if (ex.length) b.table(['Fuente excluida', 'Justificación', 'Plan de mejora'], ex.map((s) => [s.description, d(s.justification), d(s.improvement)]), { widths: [3, 4, 3] });
     else b.para('No se excluyeron fuentes identificadas.');
   }
 
@@ -141,7 +141,8 @@ window.Report = (function () {
     factorsTable(b, ctx);
     b.h2('Exclusiones');
     const exCats = S.CATEGORIES.filter((cat) => p.boundaries.categories[cat.id].status === 'excluded');
-    if (exCats.length) b.table(['Categoría excluida', 'Justificación'], exCats.map((cat) => [catLabel(cat), d(p.boundaries.categories[cat.id].justification)]), { widths: [4, 6] });
+    if (exCats.length) b.table(['Categoría excluida', 'Justificación', 'Plan de mejora'], exCats.map((cat) => [catLabel(cat), d(p.boundaries.categories[cat.id].justification), d(p.boundaries.categories[cat.id].improvement)]), { widths: [3.2, 4, 2.8] });
+    b.note('El mapa de equivalencias GHG Protocol → ISO 14064-1 es orientativo. Las fuentes marcadas con * en el detalle tienen una categoría ISO asignada manualmente, con su justificación.');
     exclusions(b, ctx);
     b.h2('Calidad e incertidumbre');
     quality(b, ctx, S.PRINCIPLES);
